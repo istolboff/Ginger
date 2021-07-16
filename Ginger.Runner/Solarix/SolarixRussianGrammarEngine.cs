@@ -159,6 +159,9 @@ namespace Ginger.Runner.Solarix
             }
         }
 
+        public string[] Tokenize(string text) =>
+            GrammarEngine.sol_TokenizeFX(_engineHandle, text, GrammarEngineAPI.RUSSIAN_LANGUAGE);
+
         public string GetNeutralForm(string word)
         {
             var hProjs = GrammarEngine.sol_ProjectWord(_engineHandle, word, 0);
@@ -269,6 +272,8 @@ namespace Ginger.Runner.Solarix
         private SentenceElement CreateSentenceElement(IntPtr hNode, int? leafType = null)
         {
             var content = GrammarEngine.sol_GetNodeContentsFX(hNode);
+            
+            var position = GrammarEngine.sol_GetNodePosition(hNode);
 
             var lemmaVersions = Enumerable.Range(0, GrammarEngine.sol_GetNodeVersionCount(_engineHandle, hNode))
                 .Select(versionIndex => 
@@ -299,7 +304,8 @@ namespace Ginger.Runner.Solarix
                 Content: content,
                 LeafLinkType: leafType == null || leafType.Value < 0 ? (LinkType?)null : (LinkType)leafType.Value,
                 LemmaVersions: lemmaVersions.Distinct().AsImmutable(), 
-                Children: children.ToList());
+                Children: children.ToList(),
+                PositionInSentence: position);
         }
 
         private IReadOnlyCollection<string> GenerateWordForms(int entryId, (int CoordinateId, int StateId)[] coordinateStates)

@@ -138,7 +138,7 @@ namespace Ginger.Runner
                 {
                     var annotationVariants = string.Join(";", BuildDisambiguatingAnnotations(currentNode.LemmaVersions));
                     throw PatternBuildingException(
-                            $"There are several lemma versions of the word '{currentNode.Content}' in pattern '{pattern.Text}'. " +
+                            $"There are several lemma versions of the word '{currentNode.Content} ({currentNode.PositionInSentence})' in pattern '{pattern.Text}'. " +
                             $"You can annotate the word with one of the following variants {annotationVariants}, " + 
                             "or reformulate the pattern wording.", 
                             invalidOperation: true);

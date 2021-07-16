@@ -15,7 +15,8 @@ namespace Ginger.Runner
         string Content, 
         IReadOnlyCollection<LemmaVersion> LemmaVersions, 
         IReadOnlyList<WordOrQuotation> Children, 
-        LinkType? LeafLinkType);
+        LinkType? LeafLinkType,
+        int PositionInSentence);
 
     internal sealed record Quotation(string Content, IReadOnlyList<WordOrQuotation> Children);
 
@@ -34,10 +35,8 @@ namespace Ginger.Runner
             string elementContent,
             Func<string, Exception> reportError) 
         =>
-            Left<Word, Quotation>(@this)
-                .IterateDepthFirst()
-                .Where(woq => woq.IsLeft)
-                .Select(woq => woq.Left!)
+            @this
+                .IterateWordsDepthFirst()
                 .Single(
                     word => elementContent.Equals(word.Content, StringComparison.OrdinalIgnoreCase),
                     first2MatchingWordsOrQuotes =>
@@ -47,7 +46,21 @@ namespace Ginger.Runner
                             _ => reportError($"There are several words '{elementContent}'")
                         });
 
-        public static IEnumerable<WordOrQuotation> IterateDepthFirst(this WordOrQuotation @this) 
+        public static Word LocateWord(this WordOrQuotation @this, int wordPositionInSentence) =>
+            @this
+                .IterateWordsDepthFirst()
+                .Single(w => w.PositionInSentence == wordPositionInSentence);
+
+        public static IEnumerable<Word> IterateWordsDepthFirst(this WordOrQuotation @this) =>
+            @this
+                .IterateDepthFirst()
+                .Where(woq => woq.IsLeft)
+                .Select(woq => woq.Left!);
+
+        private static IEnumerable<Word> IterateWordsDepthFirst(this Word @this) =>
+            Left<Word, Quotation>(@this).IterateWordsDepthFirst();
+
+        private static IEnumerable<WordOrQuotation> IterateDepthFirst(this WordOrQuotation @this) 
         =>
             new[] { @this }.Concat(
                 @this.Fold(
@@ -121,7 +134,8 @@ namespace Ginger.Runner
                                 sentenceElement.Content, 
                                 sentenceElement.LemmaVersions, 
                                 children, 
-                                sentenceElement.LeafLinkType)))
+                                sentenceElement.LeafLinkType,
+                                sentenceElement.PositionInSentence)))
             ).ToList();
 
         private static readonly Regex QuotationRecognizer = new (@"'([^']+)'", RegexOptions.Compiled);

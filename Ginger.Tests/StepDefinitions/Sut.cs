@@ -136,7 +136,7 @@ namespace Ginger.Tests.StepDefinitions
                     case "Сущность": sutDescriptionBuilder.DefineEntity(row["Phrasing"]); break;
                     case "Воздействие": sutDescriptionBuilder.DefineEffect(row["Phrasing"]); break;
                     case "Граничное условие": sutDescriptionBuilder.DefineBoundaryCondition(row["Phrasing"]); break;
-                    case "Правило": sutDescriptionBuilder.DefineBusinessRule(row["Phrasing"]); break;
+                    case "Правило поведения": sutDescriptionBuilder.DefineBusinessRule(row["Phrasing"]); break;
                     default: throw new InvalidOperationException($"Unsupported type '{row["Type"]}' of SUT description fragment");
                 }
             }

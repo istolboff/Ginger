@@ -20,6 +20,9 @@ namespace Prolog.Engine.Miscellaneous
         public Either<TLeft, TResult> Map<TResult>(Func<TRight, TResult> getFromRight) =>
             IsLeft ? Left<TLeft, TResult>(Left!) : Right<TLeft, TResult>(getFromRight(Right!));
 
+        public Either<TResult, TRight> MapLeft<TResult>(Func<TLeft, TResult> getFromLeft) =>
+            IsLeft ? Left<TResult, TRight>(getFromLeft(Left!)) : Right<TResult, TRight>(Right!);
+
         public Either<TLeft, (TRight First, TRight1 Second)> Combine<TRight1>(Either<TLeft, TRight1> other) =>
             (IsLeft, other.IsLeft) switch
             {

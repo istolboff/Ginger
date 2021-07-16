@@ -27,7 +27,7 @@ namespace Ginger.Runner
                         rules => rules,
                         _ => throw new InvalidOperationException(
                             "When defining entities, only rule-defining sentences are alowed. " +
-                            $"You're trying to use the sentence '{phrasing}' which is undesrstood as a set of statements."));
+                            $"You're trying to use the sentence '{phrasing}' which is understood as a set of statements."));
             
             var nonFactRules = entityDefinitions.Where(ed => !ed.IsFact).AsImmutable();
             if (nonFactRules.Any())
@@ -47,7 +47,7 @@ namespace Ginger.Runner
                         rules => rules,
                         _ => throw new InvalidOperationException(
                             "When defining effects, only rule-defining sentences are alowed. " +
-                            $"You're trying to use the sentence '{phrasing}' which is undesrstood as a set of statements."));
+                            $"You're trying to use the sentence '{phrasing}' which is understood as a set of statements."));
 
             _effects.AddRange(effectAsRules.Select(MoveEntityDefinitionsFromConclusionToPremises));
 
@@ -118,21 +118,52 @@ namespace Ginger.Runner
                                 extendedEntityDefinitions
                               );
             }
-
-            static bool IsVariableEqualityCheck(ComplexTerm complexTerm) =>
-                Builtin.BinaryOperators.Keys.Contains(complexTerm.Functor.Name) &&
-                complexTerm.Arguments.All(argument => argument is Atom || argument is Variable);
-
-            bool IsEntityDefinition(ComplexTerm complexTerm) =>
-                _entityDefinitions.Any(ed => Unification.IsPossible(ed, complexTerm));
-        }
-
-        public void DefineBoundaryCondition(string phrasing)
-        {
-            throw new NotImplementedException();
         }
 
         public void DefineBusinessRule(string phrasing)
+        {
+            var businessRules = Understand(phrasing)
+                    .Fold(
+                        rules => rules,
+                        _ => throw new InvalidOperationException(
+                            "When defining business rule, only rule-defining sentences are alowed. " +
+                            $"You're trying to use the sentence '{phrasing}' which is understood as a set of statements."));
+
+            _businessRules.AddRange(businessRules.Select(TransformBusinessRule));
+
+            Rule TransformBusinessRule(Rule rule)
+            {
+                var (partialStateTerms, remainingPremises) = SplitPremises(rule.Premises);
+                return Rule(
+                    ComplexTerm(
+                        Functor("конечноеСостояние", 2), 
+                        rule.Conclusion,
+                        List(partialStateTerms)),
+                    remainingPremises);
+            }
+
+            (IReadOnlyCollection<ComplexTerm> PartialState, IReadOnlyCollection<ComplexTerm> RemainingPremises) SplitPremises(
+                IReadOnlyCollection<ComplexTerm> businssRulePremises)
+            {
+                var partialStateTerms = new List<ComplexTerm>();
+                var remainingPremises = new List<ComplexTerm>();
+                foreach (var premise in businssRulePremises)
+                {
+                    if (IsVariableEqualityCheck(premise) || IsEntityDefinition(premise))
+                    {
+                        remainingPremises.Add(premise);
+                    }
+                    else
+                    {
+                        partialStateTerms.Add(premise);
+                    }
+                }
+
+                return (partialStateTerms, remainingPremises);
+            }
+        }
+
+        public void DefineBoundaryCondition(string phrasing)
         {
             throw new NotImplementedException();
         }
@@ -150,9 +181,17 @@ namespace Ginger.Runner
                 .OrElse(() => throw new InvalidOperationException($"Could not understand the phrase {phrasing}"))
                 .Meaning;
 
+        private static bool IsVariableEqualityCheck(ComplexTerm complexTerm) =>
+            Builtin.BinaryOperators.Keys.Contains(complexTerm.Functor.Name) &&
+            complexTerm.Arguments.All(argument => argument is Atom || argument is Variable);
+
+        private bool IsEntityDefinition(ComplexTerm complexTerm) =>
+            _entityDefinitions.Any(ed => Unification.IsPossible(ed, complexTerm));
+
         private readonly IRussianGrammarParser _grammarParser;
         private readonly SentenceUnderstander _sentenceUnderstander;
         private readonly List<ComplexTerm> _entityDefinitions = new ();
         private readonly List<Rule> _effects = new ();
+        private readonly List<Rule> _businessRules = new ();
     }
 }

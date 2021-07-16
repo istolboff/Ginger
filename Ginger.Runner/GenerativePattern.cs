@@ -22,6 +22,9 @@ namespace Ginger.Runner
                 .SelectMany(it => ReplicatableWordPattern.Generate(it.Pattern, it.Meaning, grammarParser, russianLexicon))
                 .Select(it => it with { Meaning = MeaningMetaModifiers.Preprocess(it.Meaning) });
 
+        
+        public static event Action<string>? PatternBuildingEvent;
+
         private static class ReplicatableWordPattern
         {
             public static IEnumerable<PatternWithMeaning> Generate(
@@ -36,23 +39,34 @@ namespace Ginger.Runner
                     return PlainPattern();
                 }
 
+                var replicatableWordsIndexes = CalculateIndexesOfReplicatableWordInPattern(
+                    AnnotatedGrammar.RemoveAnnotations(DisambiguatedPattern.Create(patternText, russianLexicon)).PlainText);
+
                 var replicatableWordElements = (
-                        from m in matchCollection
-                        let word = m.Groups[1].Value
-                        let wordLocation = new SubstringLocation(m.Groups[1].Index, m.Groups[1].Length)
-                        let lemmaDisambiguator = m.Groups[2].Success 
-                                ? LemmaVersionDisambiguatorDefinition.Create(m.Groups[2].Value, russianLexicon)
+                        from matchWithIndex in matchCollection.Select((match, matchIndex) => (match, matchIndex))
+                        let matchedGroups = matchWithIndex.match.Groups
+                        let word = matchedGroups[1].Value
+                        let wordLocation = new SubstringLocation(matchedGroups[1].Index, matchedGroups[1].Length)
+                        let lemmaDisambiguator = matchedGroups[2].Success 
+                                ? LemmaVersionDisambiguatorDefinition.Create(matchedGroups[2].Value, russianLexicon)
                                 : null
-                        let generationHint = ParseHint(m.Groups[3].Value)
-                        let generationHintLocation = new SubstringLocation(m.Groups[3].Index, m.Groups[3].Length)
+                        let generationHint = ParseHint(matchedGroups[3].Value)
+                        let generationHintLocation = new SubstringLocation(matchedGroups[3].Index, matchedGroups[3].Length)
                         let generationElement = new GenerationElementLocation(wordLocation, generationHintLocation)
-                        select new { word, generationHint, generationElement, lemmaDisambiguator }
+                        select new 
+                        { 
+                            word, 
+                            generationHint, 
+                            generationElement, 
+                            lemmaDisambiguator, 
+                            indexInParsedSentence = replicatableWordsIndexes[matchWithIndex.matchIndex] 
+                        }
                     ).ToArray();
 
                 var patternWithRemovedGenerationHints = AdjustText(
-                        patternText,
-                        replicatableWordElements
-                            .Select(ge => new StringAdjustingOperation(ge.generationElement.HintLocation, string.Empty)))
+                            patternText,
+                            replicatableWordElements
+                                .Select(ge => new StringAdjustingOperation(ge.generationElement.HintLocation, string.Empty)))
                         .Trim();
                 
                 var parsedPattern = grammarParser.ParseAnnotated(
@@ -65,6 +79,11 @@ namespace Ginger.Runner
                     return PlainPattern();
                 }
 
+                PatternBuildingEvent?.Invoke(new 
+                    { 
+                        ParsedPattern = string.Join(", ", parsedPattern.IterateWordsDepthFirst().Select(w => $"{w.Content}({w.PositionInSentence})"))
+                    }.ToString()!);
+                    
                 if (replicatableWordElements
                         .Where(ge => ge.generationHint == GenerationHint.Replicatable)
                         .Any(ge => ge.lemmaDisambiguator != null))
@@ -77,11 +96,7 @@ namespace Ginger.Runner
                 var replicatableWords = (
                             from ge in replicatableWordElements
                             where ge.generationHint == GenerationHint.Replicatable
-                            let wordElement = FindWordInParsedPattern(
-                                                patternWithRemovedGenerationHints, 
-                                                parsedPattern.Left!, 
-                                                ge.word, 
-                                                ge.generationHint)
+                            let wordElement = parsedPattern.LocateWord(ge.indexInParsedSentence)
                             select new ReplicatableWord(
                                 ge.generationElement,
                                 GetSingleLemmaVersion(wordElement, patternWithRemovedGenerationHints, ge.generationHint))
@@ -90,11 +105,7 @@ namespace Ginger.Runner
                 var pluralitySensitiveElements = (
                         from ge in replicatableWordElements
                         where ge.generationHint == GenerationHint.PluralitySensitive
-                        let wordElement = FindWordInParsedPattern(
-                                            patternWithRemovedGenerationHints,
-                                            parsedPattern.Left!, 
-                                            ge.word, 
-                                            ge.generationHint)
+                        let wordElement = parsedPattern.LocateWord(ge.indexInParsedSentence)
                         select new PluralitySensitiveElement(
                             ge.generationElement,
                             EnsureMasculine(
@@ -108,7 +119,7 @@ namespace Ginger.Runner
                                 
                         ).AsImmutable();
 
-                return replicatableWords.Count switch
+                var rawResult = replicatableWords.Count switch
                 {
                     // only {мн.} elements, no {и проч.}
                     0 => new PatternWithMeaning[]
@@ -156,8 +167,9 @@ namespace Ginger.Runner
                         $"Only single replicatable word marked with {ReplicatableHintText} is supported. " + 
                         $"In pattern '{patternText}' there are {replicatableWords.Count}.")
                     };
-                
 
+                return rawResult.Select(JoinMultipleRulesIntoSingleRuleIfConclusionIsTheSameForAllRules);
+                
                 PatternWithMeaning[] PlainPattern() =>
                     new[] { new PatternWithMeaning(patternText, meaning) };
 
@@ -168,18 +180,6 @@ namespace Ginger.Runner
                         PluralSensitivityHintText => GenerationHint.PluralitySensitive,
                         _ => throw Failure($"Unknown generation hint: '{hintText}'")
                     };
-
-                Word FindWordInParsedPattern(
-                    string phrase,
-                    Word sentenceElement, 
-                    string word, 
-                    GenerationHint hintType) 
-                =>
-                    sentenceElement
-                        .LocateWord(
-                            word,
-                            errorText => Failure(
-                                $" {errorText}. The {HintToString(hintType)} '{word}' should appear in the pattern '{phrase}' exactly once."));
 
                 LemmaVersion GetSingleLemmaVersion(
                     Word wordElement,
@@ -211,6 +211,69 @@ namespace Ginger.Runner
                         : throw Failure(
                             $"'{word}{PluralSensitivityHintText}': Слова, переходящие во множественное число при репликации, " +
                             "всегда должны иметь мужской род");
+
+                int[] CalculateIndexesOfReplicatableWordInPattern(string patternText)
+                {
+                    var replicatableWordSites = ReplicatableWordRegex.Matches(patternText);
+
+                    var hintRemovers = replicatableWordSites.ConvertAll(
+                        site => 
+                            new StringAdjustingOperation(
+                                new SubstringLocation(site.Index, site.Length), 
+                                site.Groups[1].Value));
+
+                    var patternWithRemovedHints = AdjustText(patternText, hintRemovers);
+                    var patternTokens = grammarParser.Tokenize(patternWithRemovedHints);
+                    var result = 
+                           (from n in Enumerable.Range(0, hintRemovers.Count)
+                            let nFirstHintsRemoved = AdjustText(patternText, hintRemovers.Take(n))
+                            let tokens = grammarParser.Tokenize(nFirstHintsRemoved)
+                            select IndexOfFirstDifference(patternTokens, tokens)
+                                    .Map(i => i > 0 ? i - 1 : throw ProgramLogic.Error(
+                                        "Impossible situation - pattern with all hints removed differs from the " + 
+                                        $"pattern where only first {n} hints were removed in the very first token."))
+                                    .OrElse(() => throw ProgramLogic.Error(
+                                        $"Could not find the index of the word '{hintRemovers.ElementAt(n).NewContent}' " + 
+                                        "in sentence that is marked as replicatable.")))
+                            .ToArray();
+
+                    PatternBuildingEvent?.Invoke(new 
+                        { 
+                            patternText,
+                            PatternTokens = string.Join(", ", patternTokens.Select((w, i) => $"{w}({i})")),
+                            IndexesOfReplicatableWordsInPattern = 
+                                string.Join(
+                                    ", ", 
+                                    hintRemovers.Zip(result, (hr, i) => $"{hr.NewContent}({i})"))
+                        }.ToString()!);
+
+                    return result;
+                }
+
+                static MayBe<int> IndexOfFirstDifference(IEnumerable<string> first, IEnumerable<string> second) =>
+                    first.Zip(second)
+                        .Concat(new[] { (First: "-", Second: "+") }) // taking care of situation when lengths of first and second are diffreent
+                        .Select((p, i) => (p.First, p.Second, i))
+                        .TryFirst(it => it.First != it.Second)
+                        .Map(it => it.i);
+
+                static PatternWithMeaning JoinMultipleRulesIntoSingleRuleIfConclusionIsTheSameForAllRules(
+                    PatternWithMeaning patternWithMeaning) 
+                =>
+                    patternWithMeaning with 
+                    { 
+                        Meaning = patternWithMeaning.Meaning.MapLeft(
+                            rules => rules.Count > 1 && rules.Select(r => r.Conclusion).Distinct().Count() == 1
+                                ? new[] 
+                                    { 
+                                        Rule(
+                                            rules.First().Conclusion, 
+                                            from premisIndex in Enumerable.Range(0, rules.First().Premises.Count)
+                                            from differentPremisesAtIndex in rules.Select(r => r.Premises.ElementAt(premisIndex)).Distinct()
+                                            select differentPremisesAtIndex)
+                                    }
+                                : rules)
+                    };
             }
 
             private static string AdjustText(string text, IEnumerable<StringAdjustingOperation> operations) =>

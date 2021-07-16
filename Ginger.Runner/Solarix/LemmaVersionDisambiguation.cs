@@ -97,6 +97,7 @@ namespace Ginger.Runner.Solarix
                 word => Left(word with
                         {
                             LemmaVersions = 
+                                word.LemmaVersions.Count > 1 && 
                                 WordsInPatternToLemmaPickerMap.TryGetValue(word.Content, out var lemmaPicker)
                                     ? new[] 
                                         { 
@@ -104,7 +105,7 @@ namespace Ginger.Runner.Solarix
                                                 .PickLemma(
                                                     word.LemmaVersions,
                                                     errorText => PatternBuilder.PatternBuildingException(
-                                                        $"Could not find lemma version for the word '{word.Content}' that would match " +
+                                                        $"Could not find lemma version for the word '{word.Content}({word.PositionInSentence})' that would match " +
                                                         "to the disambiguation. " + 
                                                         errorText + 
                                                         " Only the following lemma versions are available: " + 
