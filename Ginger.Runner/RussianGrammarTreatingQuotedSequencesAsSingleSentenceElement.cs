@@ -7,78 +7,86 @@ using Ginger.Runner.Solarix;
 
 namespace Ginger.Runner
 {
-    using WordOrQuotation = Either<Word, Quotation>;
+    using static MayBe;
 
-    using static Either;
-    
-    internal sealed record Word(
-        string Content, 
-        IReadOnlyCollection<LemmaVersion> LemmaVersions, 
-        IReadOnlyList<WordOrQuotation> Children, 
-        LinkType? LeafLinkType);
-
-    internal sealed record Quotation(string Content, IReadOnlyList<WordOrQuotation> Children);
-
-    internal sealed record ParsedSentence(string Sentence, WordOrQuotation SentenceSyntax)
-    {
-        public ParsedSentence ApplyDisambiguator(DisambiguatedPattern disambiguatedPattern) =>
-            disambiguatedPattern.IsTrivial
-                ? this
-                : this with { SentenceSyntax = disambiguatedPattern.ApplyTo(SentenceSyntax) };
-    }
-
-    internal static class WordOrQuotationExtensions
-    {
-        public static Word LocateWord(
-            this Word @this,
-            string elementContent,
-            Func<string, Exception> reportError) 
-        =>
-            Left<Word, Quotation>(@this)
-                .IterateDepthFirst()
-                .Where(woq => woq.IsLeft)
-                .Select(woq => woq.Left!)
-                .Single(
-                    word => elementContent.Equals(word.Content, StringComparison.OrdinalIgnoreCase),
-                    first2MatchingWordsOrQuotes =>
-                        first2MatchingWordsOrQuotes.Count switch
-                        {
-                            0 => reportError($"Could not find word '{elementContent}'"),
-                            _ => reportError($"There are several words '{elementContent}'")
-                        });
-
-        public static IEnumerable<WordOrQuotation> IterateDepthFirst(this WordOrQuotation @this) 
-        =>
-            new[] { @this }.Concat(
-                @this.Fold(
-                    word => word.Children.SelectMany(IterateDepthFirst),
-                    _ => Enumerable.Empty<WordOrQuotation>()));
-    }
-    
     internal static class RussianGrammarTreatingQuotedSequencesAsSingleSentenceElement
     {
         public static ParsedSentence ParsePreservingQuotes(
             this IRussianGrammarParser @this, 
-            string text)
+            string sentence)
         {
-            var quotedSequences = LocateQuotedSequences(text);
+            var quotedSequences = LocateQuotedSequences(sentence);
             var quotationSubstitutions = MakeSubstitutionsOfQuotedSequencesWithSingleWords(quotedSequences);
-            var textWithSubstitutedQuotes = ApplySubstitutions(quotationSubstitutions, text);
+            var textWithSubstitutedQuotes = ApplySubstitutions(quotationSubstitutions, sentence);
             var parsedText = @this.Parse(textWithSubstitutedQuotes);
-            var textSyntax = RestoreQuotations(quotationSubstitutions, parsedText).Single(
+            var sentenceStructure = RestoreQuotations(quotationSubstitutions, parsedText).Single(
                                 _ => true, 
                                 _ => new InvalidOperationException(
                                         $"Text '{textWithSubstitutedQuotes}' could not be tokenized unambiguously. Please reformulate it."));
-            return new (text, textSyntax);
+            return new (sentence, sentenceStructure);
         }
 
-        public static ParsedSentence ParsePreservingQuotes(
+        public static AnnotatedSentence ParseAnnotatedPreservingQuotes(
             this IRussianGrammarParser @this, 
-            DisambiguatedPattern disambiguatedPattern)
-        =>
-            @this
-                .ParsePreservingQuotes(disambiguatedPattern.PlainText)
-                .ApplyDisambiguator(disambiguatedPattern);
+            string annotatedText,
+            IRussianLexicon russianLexicon)
+        {
+            var quotedSequences = LocateQuotedSequences(annotatedText);
+            var quotationSubstitutions = MakeSubstitutionsOfQuotedSequencesWithSingleWords(quotedSequences);
+            var textWithSubstitutedQuotes = ApplySubstitutions(quotationSubstitutions, annotatedText);
+            var markedupWords = @this.ParseMarkup(textWithSubstitutedQuotes).ToArray();
+            var sentenceWithoutMarkup = string.Join(" ", markedupWords.Select(w => w.Content));
+            var parsedText = @this.Parse(sentenceWithoutMarkup);
+            var sentenceStructure = RestoreQuotations(quotationSubstitutions, parsedText).Single(
+                                _ => true, 
+                                _ => new InvalidOperationException(
+                                        $"Text '{textWithSubstitutedQuotes}' could not be tokenized unambiguously. Please reformulate it."));
+
+            ProgramLogic.Check(
+                (
+                    markedupWords.Select(w => w.Content).AsImmutable(),
+                    IterateDepthFirst(parsedText)
+                        .OrderBy(it => it.PositionInSentence)
+                        .Select(it => it.Content)
+                        .AsImmutable()
+                ) switch
+                {
+                    var (markups, grammars) when !markups.SequenceEqual(grammars, Impl.RussianIgnoreCase) => 
+                        Some(
+                            "Parsing marked-up sentence gave the result that is incompatible with " + 
+                            "the structure returned by russian grammmar parser." + Environment.NewLine +
+                            "Markup parsing result: " + string.Join(";" , markups) + Environment.NewLine +
+                            "Russian grammar parsing result: " + string.Join(";", grammars)),
+                    _ => None
+                });
+
+            return new (annotatedText, sentenceStructure.Map((wordOrQuotation, word) => new AnnotatedWord(
+                                    wordOrQuotation.Content, 
+                                    word.LemmaVersions,
+                                    word.LeafLinkType,
+                                    MakeAnnotations(markedupWords[wordOrQuotation.PositionInSentence]))));
+
+            WordAnnotations MakeAnnotations(MarkedupWord word) =>
+                new (
+                    word.IsFixed, 
+                    word.GenerationHint, 
+                    word.DisambiguatingCoordinates.Map(
+                        coordinateValueNames => LemmaVersionPicker.Create(
+                            russianLexicon.ResolveCoordinates(coordinateValueNames))));
+
+            static IEnumerable<SentenceElement> IterateDepthFirst(IEnumerable<SentenceElement> sentenceElements)
+            {
+                foreach (var it in sentenceElements)
+                {
+                    yield return it;
+                    foreach (var child in IterateDepthFirst(it.Children))
+                    {
+                        yield return child;
+                    }
+                }
+            }
+        }
+
 
         private static IEnumerable<string> LocateQuotedSequences(string text) =>
             QuotationRecognizer.Matches(text).Select(m => m.Groups[1].Value).AsImmutable();
@@ -106,7 +114,7 @@ namespace Ginger.Runner
             return result;
         }
 
-        private static IReadOnlyList<WordOrQuotation> RestoreQuotations(
+        private static IReadOnlyList<WordOrQuotation<Word>> RestoreQuotations(
             IReadOnlyDictionary<string, string> quotationSubstitutions, 
             IEnumerable<SentenceElement> parsedText) 
         =>
@@ -114,14 +122,20 @@ namespace Ginger.Runner
             let children = RestoreQuotations(quotationSubstitutions, sentenceElement.Children)
             select quotationSubstitutions
                     .TryFind(sentenceElement.Content)
-                    .Fold(
-                        substitution => Right<Word, Quotation>(new Quotation(substitution, children)),
-                        () => Left<Word, Quotation>(
-                            new Word(
-                                sentenceElement.Content, 
-                                sentenceElement.LemmaVersions, 
+                    .Map(
+                        substitution => new WordOrQuotation<Word>(
+                                substitution, 
+                                MakeNone<Word>(),
                                 children, 
-                                sentenceElement.LeafLinkType)))
+                                sentenceElement.PositionInSentence))
+                    .OrElse(
+                        () => new WordOrQuotation<Word>(
+                                sentenceElement.Content, 
+                                Some(new Word(
+                                    sentenceElement.LemmaVersions, 
+                                    sentenceElement.LeafLinkType)),
+                                children, 
+                                sentenceElement.PositionInSentence))
             ).ToList();
 
         private static readonly Regex QuotationRecognizer = new (@"'([^']+)'", RegexOptions.Compiled);

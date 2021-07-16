@@ -6,7 +6,7 @@ using Prolog.Engine.Parsing;
 
 namespace Prolog.Tests
 {
-    using static VerboseReporting;
+    using static PrettyPrinting;
     
     internal static class PrologLogging
     {
@@ -30,7 +30,7 @@ namespace Prolog.Tests
                     File.AppendAllText(_traceFilePath, $"{description}: ");
                 }
 
-                File.AppendAllText(_traceFilePath, Dump(@this));
+                File.AppendAllText(_traceFilePath, Print(@this));
                 File.AppendAllLines(_traceFilePath, new[] { string.Empty });
             };
 
@@ -47,7 +47,7 @@ namespace Prolog.Tests
         }
 
         private static string GetTraceFilePath(this TestContext testContext) =>
-            Path.Combine(testContext.TestLogsDir, "Prolog.trace");
+            Path.Combine(testContext.TestLogsDir, "MonadicParsing.trace");
 
         private static bool _loggingInitialized;
         private static string? _traceFilePath;

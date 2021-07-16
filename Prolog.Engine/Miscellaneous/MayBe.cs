@@ -45,12 +45,23 @@ namespace Prolog.Engine.Miscellaneous
         public T OrElse(Func<T> defaultValue) => 
             HasValue ? Value! : defaultValue();
 
+        public override string? ToString() => 
+            HasValue ? Value!.ToString() : "null";
+
 #pragma warning disable CA2225 // Provide a method named 'ToEither' as an alternate for operator op_Implicit
 #pragma warning disable CA1801 // Review unused parameters
         public static implicit operator MayBe<T>([UsedImplicitly] syntacticshugar_NoneProducer unused) =>
 #pragma warning restore CA1801 
             new (default, false);
 #pragma warning restore CA2225
+
+        public static bool operator == (MayBe<T> @this, T value) =>
+            @this
+                .Map(v => EqualityComparer<T>.Default.Equals(v, value))
+                .OrElse(false);
+
+        public static bool operator != (MayBe<T> @this, T value) =>
+            !(@this == value!);
 
         public static implicit operator MayBe<T>(MayBe<MayBe<T>> nestedMayBe) =>
             nestedMayBe.HasValue && nestedMayBe.Value!.HasValue 

@@ -14,7 +14,7 @@ namespace Ginger.Tests.StepDefinitions
 
     using static Either;
     using static Prolog.Engine.Parsing.PrologParser;
-    using static Prolog.Tests.VerboseReporting;
+    using static PrettyPrinting;
     using static BuisnessRuleChecker;
 
     [Binding]
@@ -84,7 +84,7 @@ namespace Ginger.Tests.StepDefinitions
                         Environment.NewLine +
                         string.Join(
                             Environment.NewLine, 
-                            it.MissingComponents.Select(c => "   " + Dump(c))))) +
+                            it.MissingComponents.Select(c => "   " + Print(c))))) +
                 Environment.NewLine +
                 "Only following components were generated:" +
                 Environment.NewLine +
@@ -95,17 +95,18 @@ namespace Ginger.Tests.StepDefinitions
                         Environment.NewLine +
                         string.Join(
                             Environment.NewLine, 
-                            it.Value.Select(c => "   " + Dump(c))))));
+                            it.Value.Select(c => "   " + Print(c))))));
 
             static IReadOnlyCollection<Rule> ComponentsOfType(SutSpecification sutSpecification, string type) =>
                 type switch 
                 {
                     "Воздействие" => sutSpecification.Effects,
+                    "Правило поведения" => sutSpecification.BusinessRules.ConvertAll(br => br.ToPrologRule()),
                     _ => throw new InvalidOperationException($"Cannot get SUT specification components of type '{type}'")
                 };
 
             static SentenceMeaning MakeSentenceMeaningComparable(SentenceMeaning sentenceMeaning) =>
-                sentenceMeaning.Fold2(
+                sentenceMeaning.Map2(
                     rules => new StructuralEquatableArray<Rule>(rules) as IReadOnlyCollection<Rule>,
                     statements => new StructuralEquatableArray<ComplexTerm>(statements) as IReadOnlyCollection<ComplexTerm>);
         }
@@ -136,7 +137,7 @@ namespace Ginger.Tests.StepDefinitions
                     case "Сущность": sutDescriptionBuilder.DefineEntity(row["Phrasing"]); break;
                     case "Воздействие": sutDescriptionBuilder.DefineEffect(row["Phrasing"]); break;
                     case "Граничное условие": sutDescriptionBuilder.DefineBoundaryCondition(row["Phrasing"]); break;
-                    case "Правило": sutDescriptionBuilder.DefineBusinessRule(row["Phrasing"]); break;
+                    case "Правило поведения": sutDescriptionBuilder.DefineBusinessRule(row["Phrasing"]); break;
                     default: throw new InvalidOperationException($"Unsupported type '{row["Type"]}' of SUT description fragment");
                 }
             }

@@ -6,7 +6,7 @@ using Ginger.Runner;
 
 namespace Ginger.Tests
 {
-    using static Prolog.Tests.VerboseReporting;
+    using static Prolog.Engine.PrettyPrinting;
 
     internal static class PatternRecognitionLogging
     {
@@ -18,10 +18,15 @@ namespace Ginger.Tests
             PatternBuilder.PatternEstablished += (patternId, annotatedPattern, meaning) => 
                 File.AppendAllText(
                     logFilePath, 
-                    $"| {patternId} | {annotatedPattern.Text} | {Dump(meaning, " ")} |" + Environment.NewLine);
+                    $"| {patternId} | {annotatedPattern.Sentence} | {Print(meaning, " ")} |" + Environment.NewLine);
 
-            PatternBuilder.PatternRecognitionEvent += (log, checkSucceeded) => 
-                File.AppendAllText(logFilePath, $"{(checkSucceeded ? "succeeded" : "failed")}\tCheck for {log}{Environment.NewLine}");
+            PatternBuilder.PatternRecognitionEvent += (log, checkSucceeded) =>
+            {
+                var prefix = checkSucceeded.HasValue 
+                                ? ((checkSucceeded.Value ? "succeeded" : "failed") + "\tCheck for ") 
+                                : string.Empty;
+                File.AppendAllText(logFilePath, $"{prefix}{log}{Environment.NewLine}");
+            };
         }
     }
 }

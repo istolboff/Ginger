@@ -14,10 +14,10 @@ namespace Prolog.Engine.Parsing
     using static MonadicParsing;
 
     internal sealed record PrologConstructionsParsers(
-        Parser<IReadOnlyCollection<Rule>> ProgramParser, 
-        Parser<IReadOnlyCollection<IReadOnlyCollection<ComplexTerm>>> QueryParser,
-        Parser<IReadOnlyCollection<ComplexTerm>> PremisesGroupParser,
-        Parser<Term> TermParser);
+        Parser<TextInput, IReadOnlyCollection<Rule>> ProgramParser, 
+        Parser<TextInput, IReadOnlyCollection<IReadOnlyCollection<ComplexTerm>>> QueryParser,
+        Parser<TextInput, IReadOnlyCollection<ComplexTerm>> PremisesGroupParser,
+        Parser<TextInput, Term> TermParser);
     
     public static class PrologParser
     {
@@ -34,11 +34,11 @@ namespace Prolog.Engine.Parsing
             TryParseCore(PrologParsers.TermParser, input, string.Empty)
             .Fold(_ => MakeNone<Term>(), Some);
 
-        private static T TryParse<T>(Parser<T> parser, string input, string errorMessage) =>
+        private static T TryParse<T>(Parser<TextInput, T> parser, string input, string errorMessage) =>
             TryParseCore(parser, input, errorMessage)
             .Fold(error => throw error, result => result);
 
-        private static Either<Exception, T> TryParseCore<T>(Parser<T> parser, string input, string errorMessage) =>
+        private static Either<Exception, T> TryParseCore<T>(Parser<TextInput, T> parser, string input, string errorMessage) =>
             WholeInput(parser)(new TextInput(input, 0))
              .Fold(
                 parsingError => Left<Exception, T>(ParsingError($"{errorMessage} [{input}] {parsingError.Text} at {parsingError.Location.Position}")),
@@ -94,7 +94,7 @@ namespace Prolog.Engine.Parsing
                             ch => char.IsLetterOrDigit(ch) || ch == '_'),
                         "functorName");
 
-            Parser<Term>? term = null;
+            Parser<TextInput, Term>? term = null;
 
             var infixExpressionOrSingleTerm = Tracer.Trace(
                         from delayUsage in ForwardDeclaration(term)
@@ -149,7 +149,7 @@ namespace Prolog.Engine.Parsing
                 "term");
 
             var infixExpression = Tracer.Trace(
-                        from leftPart in term!
+                        from leftPart in term
                         from @operator in Lexem(Builtin.BinaryOperators.Keys.ToArray())
                         let complexTermFactory = Builtin.BinaryOperators[@operator]
                         from rightPart in term!
@@ -206,7 +206,7 @@ namespace Prolog.Engine.Parsing
 
             return new (program, premisesAlternatives, premisesGroup, term);
 
-            Parser<Term> AsTerm<T>(Parser<T> parser) where T : Term =>
+            Parser<TextInput, Term> AsTerm<T>(Parser<TextInput, T> parser) where T : Term =>
                 from v in parser
                 select v as Term;
         }

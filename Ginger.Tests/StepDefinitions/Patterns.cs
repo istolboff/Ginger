@@ -14,8 +14,9 @@ namespace Ginger.Tests.StepDefinitions
     using static Either;
     using static MakeCompilerHappy;
     using static MonadicParsing;
+    using static TextParsingPrimitives;
+    using static PrettyPrinting;
     using static PrologParser;
-    using static Prolog.Tests.VerboseReporting;
 
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
 
@@ -76,8 +77,8 @@ namespace Ginger.Tests.StepDefinitions
                     select new 
                     { 
                         situation.Sentence, 
-                        ExpectedMeaning = Dump(expectedMeaning),
-                        ActualMeaning = understoodSentence.Map(r => Dump(r.Meaning)).OrElse("Understanding failed"),
+                        ExpectedMeaning = Print(expectedMeaning),
+                        ActualMeaning = understoodSentence.Map(r => Print(r.Meaning)).OrElse("Understanding failed"),
                         ExpectedPatternId = situation.RecognizedWithPattern,
                         ActualPatternId = understoodSentence.Map(r => r.PatternId).OrElse("n/a")
                     }
@@ -101,7 +102,7 @@ namespace Ginger.Tests.StepDefinitions
                     {
                         Sentence = sentence,
                         understoodSentence.PatternId,
-                        Meaning = Dump(understoodSentence.Meaning)
+                        Meaning = Print(understoodSentence.Meaning)
                     }
                 ).AsImmutable();
 
@@ -122,8 +123,8 @@ namespace Ginger.Tests.StepDefinitions
                                                         .Select(s => s.Trim())
                     let actualConcretePatterns = MakeGenerativePattern(generativePatternText)
                                                     .GenerateConcretePatterns(_grammarParser, _russianLexicon)
-                                                    .Select(it => it.Pattern)
-                    where !expectedConcretePatterns.SequenceEqual(actualConcretePatterns)
+                                                    .Select(it => it.PatternWithMeaning.Pattern.Sentence)
+                    where !expectedConcretePatterns.SequenceEqual(actualConcretePatterns, Impl.RussianIgnoreCase)
                     select new 
                     { 
                         GenerativePatternText = generativePatternText + Environment.NewLine, 
@@ -131,7 +132,7 @@ namespace Ginger.Tests.StepDefinitions
                                                                     Environment.NewLine + Environment.NewLine, 
                                                                     expectedConcretePatterns
                                                                         .Zip(actualConcretePatterns)
-                                                                        .Where(it => it.First != it.Second)
+                                                                        .Where(it => !Impl.RussianIgnoreCase.Equals(it.First, it.Second))
                                                                         .Select(it => $" +  !{it.First}!{Environment.NewLine} -  !{it.Second}!"))
                     }
                 ).AsImmutable();

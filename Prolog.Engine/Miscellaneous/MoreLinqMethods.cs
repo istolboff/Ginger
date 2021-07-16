@@ -48,7 +48,7 @@ namespace Prolog.Engine.Miscellaneous
         public static MayBe<T> TryFirst<T>(this IEnumerable<T> @this) =>
             @this.TryFirst(_ => true);
 
-        public static T Single<T>(
+        public static MayBe<T> TrySingle<T>(
             this IEnumerable<T> @this,
             Func<T, bool> predicate,
             Func<IReadOnlyCollection<T>, Exception> reportError) =>
@@ -56,12 +56,21 @@ namespace Prolog.Engine.Miscellaneous
                 .Where(predicate)
                 .Take(2)
                 .AsImmutable()
-                .Apply(matchingElements => 
+                .Apply(matchingElements =>
                     matchingElements.Count switch 
                     {
-                        1 => matchingElements.Single(),
+                        0 => None,
+                        1 => Some(matchingElements.Single()),
                         _ => throw reportError(matchingElements)
                     });
+
+        public static T Single<T>(
+            this IEnumerable<T> @this,
+            Func<T, bool> predicate,
+            Func<IReadOnlyCollection<T>, Exception> reportError) =>
+            @this
+                .TrySingle(predicate, reportError)
+                .OrElse(() => throw reportError(Array.Empty<T>()));
 
         public static TAccumulate AggregateWhile<TSource, TAccumulate>(
             this IEnumerable<TSource> source,
@@ -170,19 +179,6 @@ namespace Prolog.Engine.Miscellaneous
             }
         }
 
-        public static int IndexOf<T>(this IReadOnlyCollection<T> @this, T element)
-        {
-            foreach (var it in @this.Select((item, index) => (item, index)))
-            {
-                if (EqualityComparer<T>.Default.Equals(it.item, element))
-                {
-                    return it.index;
-                }
-            }
-
-            return -1;
-        }
-
         public static IEnumerable<T> Cast<T>(
             this IEnumerable @this, 
             Func<object, Exception> makeInvalidTypeException)
@@ -192,6 +188,27 @@ namespace Prolog.Engine.Miscellaneous
                 yield return it is T result ? result : throw makeInvalidTypeException(it);
             }
         }
+
+        public static bool HasMoreThanOneElement<T>(this IReadOnlyCollection<T> @this) =>
+            @this.Count > 1;
+
+        public static bool HasMoreThanOneElement<T>(this IEnumerable<T> @this) =>
+            @this.Skip(1).Any();
+
+        public static bool IsSubsetOf<T>(this IEnumerable<T> @this, IEnumerable<T> that) =>
+            !@this.Except(that).Any();
+
+        public static int FindIndex<T>(this IReadOnlyCollection<T> @this, Predicate<T> predicate) =>
+            @this switch
+            {
+                T[] array => Array.FindIndex(array, predicate),
+                List<T> list => list.FindIndex(predicate),
+                _ => @this
+                        .Select((item, index) => (item, index))
+                        .TryFirst(it => predicate(it.item))
+                        .Map(it => it.index)
+                        .OrElse(-1)
+            };
     }
     
     internal static class Immutable

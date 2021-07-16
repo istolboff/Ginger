@@ -10,11 +10,12 @@ using Ginger.Runner.Solarix;
 namespace Ginger.Runner
 {
     using static MakeCompilerHappy;
+    using static MayBe;
     using static MonadicParsing;
     using static PrologParser;
     using static TextParsingPrimitives;
 
-    using ConcreteUnderstander = Func<ParsedSentence, MayBe<UnderstoodSentence>>;
+    using ConcreteUnderstander = Func<ParsedSentence, MayBe<(UnderstoodSentence UnderstoodSentence, int UnderstandingConfidenceLevel)>>;
 
     internal sealed class SentenceUnderstander
     {
@@ -45,26 +46,16 @@ namespace Ginger.Runner
             {
                 var concretePatterns = generativePattern
                                         .GenerateConcretePatterns(grammarParser, russianLexicon)
-                                        .Select(concretePattern => 
-                                            new 
-                                            { 
-                                                concretePattern,
-                                                annotatedSentence = grammarParser.ParseAnnotated(
-                                                                        DisambiguatedPattern.Create(
-                                                                            concretePattern.Pattern, 
-                                                                            russianLexicon))
-                                            })
                                         .AsImmutable();
                 
                 var ambiguouslyUnderstoodPatterns = (
                     from it in concretePatterns
-                    let understanding = Understand(
-                                            new(it.annotatedSentence.Text, it.annotatedSentence.Sentence),
-                                            concreteUnderstanders)
+                    let pattern = it.PatternWithMeaning.Pattern
+                    let understanding = Understand(pattern.AsParsedSentence(), concreteUnderstanders)
                     where understanding.HasValue
                     select new
                     { 
-                        it.concretePattern.Pattern, 
+                        Pattern = pattern, 
                         NewPatternId = generativePattern.PatternId, 
                         ExistingPatternId = understanding.Value!.PatternId 
                     }
@@ -77,15 +68,14 @@ namespace Ginger.Runner
                         string.Join(
                             Environment.NewLine, 
                             ambiguouslyUnderstoodPatterns.Select(
-                                aup => $"   text '{aup.Pattern}' from pattern '{aup.NewPatternId}' " + 
+                                aup => $"   text '{aup.Pattern.Sentence}' from pattern '{aup.NewPatternId}' " + 
                                        $"was recognized by the pattern '{aup.ExistingPatternId}'")));
                 }
 
                 concreteUnderstanders.AddRange(concretePatterns
-                    .Select(it => PatternBuilder.BuildPattern(
-                                    generativePattern.PatternId,
-                                    it.annotatedSentence,
-                                    it.concretePattern.Meaning,
+                    .Select(concretePattern => PatternBuilder.BuildPattern(
+                                    concretePattern.PatternId,
+                                    concretePattern.PatternWithMeaning,
                                     grammarParser,
                                     russianLexicon,
                                     result)));
@@ -100,12 +90,23 @@ namespace Ginger.Runner
         =>
             phraseTypeUnderstanders
                 .Select(phraseTypeUnderstander => phraseTypeUnderstander(sentence))
-                .TryFirst(result => result.HasValue);
+                .Where(result => result.HasValue)
+                .Select(result => result.Value)
+                .AggregateWhile(
+                    MakeNone<(UnderstoodSentence UnderstoodSentence, int UnderstandingConfidenceLevel)>(),
+                    (bestUnderstandingSoFar, currentUnderstanding) =>
+                        !bestUnderstandingSoFar.HasValue || 
+                        bestUnderstandingSoFar.Value.UnderstandingConfidenceLevel > 
+                        currentUnderstanding.UnderstandingConfidenceLevel
+                            ? Some(currentUnderstanding)
+                            : bestUnderstandingSoFar,
+                    bestUnderstandingSoFar => bestUnderstandingSoFar.Map(v => v.UnderstandingConfidenceLevel != 0).OrElse(true))
+                .Map(result => result.UnderstoodSentence);
 
         private static TextInput ReadEmbeddedResource(string name)
         {
             var stream = Assembly
-                            .GetExecutingAssembly()!
+                            .GetExecutingAssembly()
                             .GetManifestResourceStream(name);
             using var reader = new StreamReader(SuppressCa1062(stream));
             return new (reader.ReadToEnd(), 0);

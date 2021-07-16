@@ -11,7 +11,7 @@ namespace Prolog.Tests
 
     using static DomainApi;
     using static PrologParser;
-    using static VerboseReporting;
+    using static PrettyPrinting;
 
     public abstract class ProofTestsBase
     {
@@ -58,10 +58,10 @@ namespace Prolog.Tests
                 select new 
                 { 
                     situation.Description,
-                    Prorgam = Dump(situation.Program, Environment.NewLine), 
-                    Query = Dump(situation.Query),
-                    ExpectedProofs = Dump(expectedProofs), 
-                    ActualProofs = Dump(actualProofs) 
+                    Prorgam = Print(situation.Program, Environment.NewLine), 
+                    Query = Print(situation.Query),
+                    ExpectedProofs = Print(expectedProofs), 
+                    ActualProofs = Print(actualProofs) 
                 })
                 .ToList();
 

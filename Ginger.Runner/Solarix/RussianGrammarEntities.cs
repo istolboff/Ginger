@@ -7,6 +7,8 @@ using SolarixGrammarEngineNET;
 
 namespace Ginger.Runner.Solarix
 {
+    using static MakeCompilerHappy;
+
 // ReSharper disable InconsistentNaming
 // ReSharper disable UnusedMember.Global
     internal enum PartOfSpeech
@@ -30,109 +32,109 @@ namespace Ginger.Runner.Solarix
 
     internal enum LinkType
     {
-        OBJECT_link = 0,
-        ATTRIBUTE_link = 1,
-        CONDITION_link = 2,
-        CONSEQUENCE_link = 3,
-        SUBJECT_link = 4,
-        RHEMA_link = 5,
-        COVERB_link = 6,
-        NUMBER2OBJ_link = 12,
-        TO_VERB_link = 16,
-        TO_INF_link = 17,
-        TO_PERFECT = 18,
-        TO_UNPERFECT = 19,
-        TO_NOUN_link = 20,
-        TO_ADJ_link = 21,
-        TO_ADV_link = 22,
-        TO_RETVERB = 23,
-        TO_GERUND_2_link = 24,
-        WOUT_RETVERB = 25,
-        TO_ENGLISH_link = 26,
-        TO_RUSSIAN_link = 27,
-        TO_FRENCH_link = 28,
-        SYNONYM_link = 29,
-        SEX_SYNONYM_link = 30,
-        CLASS_link = 31,
-        MEMBER_link = 32,
-        TO_SPANISH_link = 33,
-        TO_GERMAN_link = 34,
-        TO_CHINESE_link = 35,
-        TO_POLAND_link = 36,
-        TO_ITALIAN_link = 37,
-        TO_PORTUGUAL_link = 38,
-        ACTION_link = 39,
-        ACTOR_link = 40,
-        TOOL_link = 41,
-        RESULT_link = 42,
-        TO_JAPANESE_link = 43,
-        TO_KANA_link = 44,
-        TO_KANJI_link = 45,
-        ANTONYM_link = 46,
-        EXPLANATION_link = 47,
-        WWW_link = 48,
-        ACCENT_link = 49,
-        YO_link = 50,
-        TO_DIMINUITIVE_link = 51,
-        TO_RUDE_link = 52,
-        TO_BIGGER_link = 53,
-        TO_NEUTRAL_link = 54,
-        TO_SCOLARLY = 55,
-        TO_SAMPLE_link = 56,
-        USAGE_TAG_link = 57,
-        PROPERTY_link = 58,
-        TO_CYRIJI_link = 59,
-        HABITANT_link = 60,
-        CHILD_link = 61,
-        PARENT_link = 62,
-        UNIT_link = 63,
-        SET_link = 64,
-        TO_WEAKENED_link = 65,
-        VERBMODE_BASIC_link = 66,
-        NEGATION_PARTICLE_link = 67,
-        NEXT_COLLOCATION_ITEM_link = 68,
-        SUBORDINATE_CLAUSE_link = 69,
-        RIGHT_GENITIVE_OBJECT_link = 70,
-        ADV_PARTICIPLE_link = 71,
-        POSTFIX_PARTICLE_link = 72,
-        INFINITIVE_link = 73,
-        NEXT_ADJECTIVE_link = 74,
-        NEXT_NOUN_link = 75,
-        THEMA_link = 76,
-        RIGHT_AUX2INFINITIVE_link = 77,
-        RIGHT_AUX2PARTICIPLE = 78,
-        RIGHT_AUX2ADJ = 79,
-        RIGHT_LOGIC_ITEM_link = 80,
-        RIGHT_COMPARISON_Y_link = 81,
-        RIGHT_NOUN_link = 82,
-        RIGHT_NAME_link = 83,
-        ADJ_PARTICIPLE_link = 84,
-        PUNCTUATION_link = 85,
-        IMPERATIVE_SUBJECT_link = 86,
-        IMPERATIVE_VERB2AUX_link = 87,
-        AUX2IMPERATIVE_VERB = 88,
-        PREFIX_PARTICLE_link = 89,
-        PREFIX_CONJUNCTION_link = 90,
-        LOGICAL_CONJUNCTION_link = 91,
-        NEXT_CLAUSE_link = 92,
-        LEFT_AUX_VERB_link = 93,
-        BEG_INTRO_link = 94,
-        RIGHT_PREPOSITION_link = 95,
-        WH_SUBJECT_link = 96,
-        IMPERATIVE_PARTICLE_link = 97,
-        GERUND_link = 98,
-        PREPOS_ADJUNCT_link = 99,
-        DIRECT_OBJ_INTENTION_link = 100,
-        COPULA_link = 101,
-        DETAILS_link = 102,
-        SENTENCE_CLOSER_link = 103,
-        OPINION_link = 104,
-        APPEAL_link = 105,
-        TERM_link = 106,
-        SPEECH_link = 107,
-        QUESTION_link = 108,
-        POLITENESS_link = 109,
-        SEPARATE_ATTR_link = 110,
+        OBJECT_link                    = GrammarEngineAPI.OBJECT_link,
+        ATTRIBUTE_link                 = GrammarEngineAPI.ATTRIBUTE_link,
+        CONDITION_link                 = GrammarEngineAPI.CONDITION_link,
+        CONSEQUENCE_link               = GrammarEngineAPI.CONSEQUENCE_link,
+        SUBJECT_link                   = GrammarEngineAPI.SUBJECT_link,
+        RHEMA_link                     = GrammarEngineAPI.RHEMA_link,
+        COVERB_link                    = GrammarEngineAPI.COVERB_link,
+        NUMBER2OBJ_link                = GrammarEngineAPI.NUMBER2OBJ_link,
+        TO_VERB_link                   = GrammarEngineAPI.TO_VERB_link,
+        TO_INF_link                    = GrammarEngineAPI.TO_INF_link,
+        TO_PERFECT                     = GrammarEngineAPI.TO_PERFECT,
+        TO_UNPERFECT                   = GrammarEngineAPI.TO_UNPERFECT,
+        TO_NOUN_link                   = GrammarEngineAPI.TO_NOUN_link,
+        TO_ADJ_link                    = GrammarEngineAPI.TO_ADJ_link,
+        TO_ADV_link                    = GrammarEngineAPI.TO_ADV_link,
+        TO_RETVERB                     = GrammarEngineAPI.TO_RETVERB,
+        TO_GERUND_2_link               = GrammarEngineAPI.TO_GERUND_2_link,
+        WOUT_RETVERB                   = GrammarEngineAPI.WOUT_RETVERB,
+        TO_ENGLISH_link                = GrammarEngineAPI.TO_ENGLISH_link,
+        TO_RUSSIAN_link                = GrammarEngineAPI.TO_RUSSIAN_link,
+        TO_FRENCH_link                 = GrammarEngineAPI.TO_FRENCH_link,
+        SYNONYM_link                   = GrammarEngineAPI.SYNONYM_link,
+        SEX_SYNONYM_link               = GrammarEngineAPI.SEX_SYNONYM_link,
+        CLASS_link                     = GrammarEngineAPI.CLASS_link,
+        MEMBER_link                    = GrammarEngineAPI.MEMBER_link,
+        TO_SPANISH_link                = GrammarEngineAPI.TO_SPANISH_link,
+        TO_GERMAN_link                 = GrammarEngineAPI.TO_GERMAN_link,
+        TO_CHINESE_link                = GrammarEngineAPI.TO_CHINESE_link,
+        TO_POLAND_link                 = GrammarEngineAPI.TO_POLAND_link,
+        TO_ITALIAN_link                = GrammarEngineAPI.TO_ITALIAN_link,
+        TO_PORTUGUAL_link              = GrammarEngineAPI.TO_PORTUGUAL_link,
+        ACTION_link                    = GrammarEngineAPI.ACTION_link,
+        ACTOR_link                     = GrammarEngineAPI.ACTOR_link,
+        TOOL_link                      = GrammarEngineAPI.TOOL_link,
+        RESULT_link                    = GrammarEngineAPI.RESULT_link,
+        TO_JAPANESE_link               = GrammarEngineAPI.TO_JAPANESE_link,
+        TO_KANA_link                   = GrammarEngineAPI.TO_KANA_link,
+        TO_KANJI_link                  = GrammarEngineAPI.TO_KANJI_link,
+        ANTONYM_link                   = GrammarEngineAPI.ANTONYM_link,
+        EXPLANATION_link               = GrammarEngineAPI.EXPLANATION_link,
+        WWW_link                       = GrammarEngineAPI.WWW_link,
+        ACCENT_link                    = GrammarEngineAPI.ACCENT_link,
+        YO_link                        = GrammarEngineAPI.YO_link,
+        TO_DIMINUITIVE_link            = GrammarEngineAPI.TO_DIMINUITIVE_link,
+        TO_RUDE_link                   = GrammarEngineAPI.TO_RUDE_link,
+        TO_BIGGER_link                 = GrammarEngineAPI.TO_BIGGER_link,
+        TO_NEUTRAL_link                = GrammarEngineAPI.TO_NEUTRAL_link,
+        TO_SCOLARLY                    = GrammarEngineAPI.TO_SCOLARLY,
+        TO_SAMPLE_link                 = GrammarEngineAPI.TO_SAMPLE_link,
+        USAGE_TAG_link                 = GrammarEngineAPI.USAGE_TAG_link,
+        PROPERTY_link                  = GrammarEngineAPI.PROPERTY_link,
+        TO_CYRIJI_link                 = GrammarEngineAPI.TO_CYRIJI_link,
+        HABITANT_link                  = GrammarEngineAPI.HABITANT_link,
+        CHILD_link                     = GrammarEngineAPI.CHILD_link,
+        PARENT_link                    = GrammarEngineAPI.PARENT_link,
+        UNIT_link                      = GrammarEngineAPI.UNIT_link,
+        SET_link                       = GrammarEngineAPI.SET_link,
+        TO_WEAKENED_link               = GrammarEngineAPI.TO_WEAKENED_link,
+        VERBMODE_BASIC_link            = GrammarEngineAPI.VERBMODE_BASIC_link,
+        NEGATION_PARTICLE_link         = GrammarEngineAPI.NEGATION_PARTICLE_link,
+        NEXT_COLLOCATION_ITEM_link     = GrammarEngineAPI.NEXT_COLLOCATION_ITEM_link,
+        SUBORDINATE_CLAUSE_link        = GrammarEngineAPI.SUBORDINATE_CLAUSE_link,
+        RIGHT_GENITIVE_OBJECT_link     = GrammarEngineAPI.RIGHT_GENITIVE_OBJECT_link,
+        ADV_PARTICIPLE_link            = GrammarEngineAPI.ADV_PARTICIPLE_link,
+        POSTFIX_PARTICLE_link          = GrammarEngineAPI.POSTFIX_PARTICLE_link,
+        INFINITIVE_link                = GrammarEngineAPI.INFINITIVE_link,
+        NEXT_ADJECTIVE_link            = GrammarEngineAPI.NEXT_ADJECTIVE_link,
+        NEXT_NOUN_link                 = GrammarEngineAPI.NEXT_NOUN_link,
+        THEMA_link                     = GrammarEngineAPI.THEMA_link,
+        RIGHT_AUX2INFINITIVE_link      = GrammarEngineAPI.RIGHT_AUX2INFINITIVE_link,
+        RIGHT_AUX2PARTICIPLE           = GrammarEngineAPI.RIGHT_AUX2PARTICIPLE,
+        RIGHT_AUX2ADJ                  = GrammarEngineAPI.RIGHT_AUX2ADJ,
+        RIGHT_LOGIC_ITEM_link          = GrammarEngineAPI.RIGHT_LOGIC_ITEM_link,
+        RIGHT_COMPARISON_Y_link        = GrammarEngineAPI.RIGHT_COMPARISON_Y_link,
+        RIGHT_NOUN_link                = GrammarEngineAPI.RIGHT_NOUN_link,
+        RIGHT_NAME_link                = GrammarEngineAPI.RIGHT_NAME_link,
+        ADJ_PARTICIPLE_link            = GrammarEngineAPI.ADJ_PARTICIPLE_link,
+        PUNCTUATION_link               = GrammarEngineAPI.PUNCTUATION_link,
+        IMPERATIVE_SUBJECT_link        = GrammarEngineAPI.IMPERATIVE_SUBJECT_link,
+        IMPERATIVE_VERB2AUX_link       = GrammarEngineAPI.IMPERATIVE_VERB2AUX_link,
+        AUX2IMPERATIVE_VERB            = GrammarEngineAPI.AUX2IMPERATIVE_VERB,
+        PREFIX_PARTICLE_link           = GrammarEngineAPI.PREFIX_PARTICLE_link,
+        PREFIX_CONJUNCTION_link        = GrammarEngineAPI.PREFIX_CONJUNCTION_link,
+        LOGICAL_CONJUNCTION_link       = GrammarEngineAPI.LOGICAL_CONJUNCTION_link,
+        NEXT_CLAUSE_link               = GrammarEngineAPI.NEXT_CLAUSE_link,
+        LEFT_AUX_VERB_link             = GrammarEngineAPI.LEFT_AUX_VERB_link,
+        BEG_INTRO_link                 = GrammarEngineAPI.BEG_INTRO_link,
+        RIGHT_PREPOSITION_link         = GrammarEngineAPI.RIGHT_PREPOSITION_link,
+        WH_SUBJECT_link                = GrammarEngineAPI.WH_SUBJECT_link,
+        IMPERATIVE_PARTICLE_link       = GrammarEngineAPI.IMPERATIVE_PARTICLE_link,
+        GERUND_link                    = GrammarEngineAPI.GERUND_link,
+        PREPOS_ADJUNCT_link            = GrammarEngineAPI.PREPOS_ADJUNCT_link,
+        DIRECT_OBJ_INTENTION_link      = GrammarEngineAPI.DIRECT_OBJ_INTENTION_link,
+        COPULA_link                    = GrammarEngineAPI.COPULA_link,
+        DETAILS_link                   = GrammarEngineAPI.DETAILS_link,
+        SENTENCE_CLOSER_link           = GrammarEngineAPI.SENTENCE_CLOSER_link,
+        OPINION_link                   = GrammarEngineAPI.OPINION_link,
+        APPEAL_link                    = GrammarEngineAPI.APPEAL_link,
+        TERM_link                      = GrammarEngineAPI.TERM_link,
+        SPEECH_link                    = GrammarEngineAPI.SPEECH_link,
+        QUESTION_link                  = GrammarEngineAPI.QUESTION_link,
+        POLITENESS_link                = GrammarEngineAPI.POLITENESS_link,
+        SEPARATE_ATTR_link             = GrammarEngineAPI.SEPARATE_ATTR_link
     }
 
     internal enum Case
@@ -193,12 +195,6 @@ namespace Ginger.Runner.Solarix
         Средний = GrammarEngineAPI.NEUTRAL_GENDER_ru
     }
 
-    internal enum Form
-    {
-        Одушевленный = GrammarEngineAPI.ANIMATIVE_FORM_ru,
-        Неодушевленный = GrammarEngineAPI.INANIMATIVE_FORM_ru
-    }
-
     internal enum AdjectiveForm
     {
         Полное,
@@ -224,8 +220,8 @@ namespace Ginger.Runner.Solarix
             {
                 new AdjectiveCharacteristics(default, default, default, default, default),
                 new VerbCharacteristics(default, default, default, default, default, default, default),
-                new NounCharacteristics(default, default, default, default),
-                new VerbalNounCharacteristics(default, default, default, default, string.Empty),
+                new NounCharacteristics(default, default, default),
+                new VerbalNounCharacteristics(default, default, default, string.Empty),
                 new PronounCharacteristics(default, default, default, default),
                 new AdverbCharacteristics(default),
                 new GerundCharacteristics(default, default),
@@ -242,7 +238,6 @@ namespace Ginger.Runner.Solarix
                 { typeof(Case), GrammarEngineAPI.CASE_ru },
                 { typeof(Number), GrammarEngineAPI.NUMBER_ru },
                 { typeof(Gender), GrammarEngineAPI.GENDER_ru },
-                { typeof(Form), GrammarEngineAPI.FORM_ru },
                 { typeof(Person), GrammarEngineAPI.PERSON_ru },
                 { typeof(VerbForm), GrammarEngineAPI.VERB_FORM_ru },
                 { typeof(VerbAspect), GrammarEngineAPI.ASPECT_ru },
@@ -251,6 +246,11 @@ namespace Ginger.Runner.Solarix
                 { typeof(Transitiveness), GrammarEngineAPI.TRANSITIVENESS_ru },
                 { typeof(AdjectiveForm), GrammarEngineAPI.SHORTNESS_ru }
             };
+    }
+
+    internal sealed record CoordinateValue(Type CoordinateType, string ValueName, int EnumValue)
+    {
+        public object ToObject() => Enum.ToObject(CoordinateType, EnumValue);
     }
 
     internal abstract record GrammarCharacteristics
@@ -283,7 +283,9 @@ namespace Ginger.Runner.Solarix
                 _ => throw ProgramLogic.Error($"Please add switch branch for {GetType().Name} in GrammarCharacteristics.TryGetGender()")
             };
 
-        public (int CoordinateId, int StateId)[] ToCoordIdStateIdPairArray(Func<int, int, (int CoordinateId, int StateId)?> adjustCoordIdStateIdPair) =>
+        public (int CoordinateId, int StateId)[] ToCoordIdStateIdPairArray(
+            Func<int, int, (int CoordinateId, int StateId)?> adjustCoordIdStateIdPair) 
+        =>
             (from property in GetType().GetProperties()
             let propertyType = property.PropertyType.RemoveNullability()
             where propertyType.IsEnum
@@ -294,7 +296,27 @@ namespace Ginger.Runner.Solarix
             where adjustedValues != null
             select adjustedValues.Value
             ).ToArray();
-   }
+
+        public IEnumerable<Type> GetCoordinateTypes() =>
+            GetType().GetProperties()
+                .Select(property => property.PropertyType.RemoveNullability())
+                .Where(propertyType => propertyType.IsEnum);
+
+        public GrammarCharacteristics With(IEnumerable<CoordinateValue> coordinates)
+        {
+            var type = GetType();
+            var constructorArguments = 
+                from propertyType in type.GetMethod("Deconstruct")!.GetParameters().Select(p => p.ParameterType.GetElementType())
+                let property = type.GetProperties().Single(p => p.PropertyType == propertyType)
+                let coordinate = coordinates.TrySingle(
+                                                c => c.CoordinateType == propertyType.RemoveNullability(), 
+                                                matchingProperties => ProgramLogic.Error(
+                                                    $"Several coordinate values of the same type {propertyType.RemoveNullability().Name} were provided: " +
+                                                    string.Join(",", matchingProperties.Select(mp => mp.ValueName))))
+                select coordinate.Map(c => c.ToObject()).OrElse(() => SuppressCa1062(property.GetValue(this)));
+            return (GrammarCharacteristics)SuppressCa1062(Activator.CreateInstance(type, constructorArguments.ToArray()));
+        }
+    }
 
 #pragma warning disable CA1801 // Review unused parameters
     internal sealed record AdjectiveCharacteristics(
@@ -317,15 +339,14 @@ namespace Ginger.Runner.Solarix
 
     internal sealed record AdverbCharacteristics(ComparisonForm ComparisonForm) : GrammarCharacteristics;
 
-    internal record NounCharacteristics(Case Case, Number Number, Gender Gender, Form? Form) : GrammarCharacteristics;
+    internal record NounCharacteristics(Case Case, Number Number, Gender Gender) : GrammarCharacteristics;
 
     internal sealed record VerbalNounCharacteristics(
         Case Case, 
         Number Number, 
         Gender Gender, 
-        Form? Form, 
         string RelatedInfinitive) 
-        : NounCharacteristics(Case, Number, Gender, Form);
+        : NounCharacteristics(Case, Number, Gender);
 
     internal sealed record PronounCharacteristics(Case Case, Gender? Gender, Number Number, Person Person) : GrammarCharacteristics;
 
@@ -342,7 +363,7 @@ namespace Ginger.Runner.Solarix
 
     internal sealed record LemmaVersion(string Lemma, int EntryId, PartOfSpeech? PartOfSpeech, GrammarCharacteristics Characteristics);
 
-    internal sealed record SentenceElement(string Content, IReadOnlyCollection<LemmaVersion> LemmaVersions, IReadOnlyList<SentenceElement> Children, LinkType? LeafLinkType);
+    internal sealed record SentenceElement(string Content, IReadOnlyCollection<LemmaVersion> LemmaVersions, IReadOnlyList<SentenceElement> Children, LinkType? LeafLinkType, int PositionInSentence);
 // ReSharper restore UnusedMember.Global
 // ReSharper restore InconsistentNaming
 }

@@ -7,6 +7,7 @@ namespace Ginger.Runner
 {
     using static DomainApi;
     using static Prolog.Engine.Parsing.PrologParser;
+    using static PrettyPrinting;
 
     public static class BuisnessRuleChecker
     {
@@ -15,13 +16,13 @@ namespace Ginger.Runner
            (from businessRule in sutDescription.BusinessRules
             let query = ParseQuery($@"
                     начальноеСостояние(InitialState)
-                    , FinalStateName = '{businessRule.FinalStateName}'
+                    , FinalStateName = '{Print(businessRule.Outcome)}'
                     , конечноеСостояние(FinalStateName, FinalState)
                     , solve(InitialState, FinalStateName, FinalState, Solution)
                     , dictionaryValues(Solution, Route)")
-            from proof in Proof.Find(sutDescription.Program, query)
+            from proof in Proof.Find(sutDescription.BuildProgram(), query)
             let scenario = new TestScenario(
-                businessRule.FinalStateName, 
+                Print(businessRule.Outcome),
                 new (proof.Instantiations[Variable("Route")].CastToList<ComplexTerm>()))
             group scenario by scenario.ExpectedOutcome into g
             select g)

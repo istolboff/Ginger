@@ -6,24 +6,39 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Prolog.Engine.Parsing
 {
+    using TextParsingError = ParsingError<TextInput>;
+
     using static Either;
     using static MonadicParsing;
     
+    internal sealed record TextInput(string Text, int Position)
+    {
+        public TextInput Skip(int n) => this with { Position = this.Position + n };
+
+        public TextInput MoveTo(int n) => this with { Position = n };
+
+        public TextInput SkipToEndOfLine() =>
+            MoveTo(Text
+                    .IndexOfAny(new[] { '\r', '\n' }, Position)
+                    .Apply(i => i >= 0 ? i : Text.Length));
+
+        public override string ToString() => 
+            Text.Insert(Position, "▲");
+    }
+
     internal static class TextParsingPrimitives
     {
-        public static Parser<string> SkipWhitespaces =>
+        public static Parser<TextInput, string> SkipWhitespaces =>
             Repeat(Expect(char.IsWhiteSpace)).Select(chars => string.Join(string.Empty, chars));
 
-        public static Parser<bool> Eof =>
-            input => (input.Position == input.Text.Length) switch 
-                { 
-                    true => Right(Result(true, input)),
-                    false => Left(new ParsingError("expected to be at the end of input", input))
-                };
+        public static Parser<TextInput, TValue> WholeInput<TValue>(Parser<TextInput, TValue> parser) =>
+            from result in parser
+            from unsused in SkipWhitespaces.Then(Eof)
+            select result;
 
-        public static Parser<bool> Eol =>
+        public static Parser<TextInput, bool> Eol =>
             Repeat(Expect(ch => char.IsWhiteSpace(ch) && !Environment.NewLine.Contains(ch)))
-                .Then<IReadOnlyCollection<char>, bool>(
+                .Then<TextInput, IReadOnlyCollection<char>, bool>(
                     input => (input.Position < input.Text.Length && 
                             string.Compare(
                                 input.Text, 
@@ -36,24 +51,24 @@ namespace Prolog.Engine.Parsing
                         switch 
                         { 
                             true => Right(Result(true, input.Skip(Environment.NewLine.Length))),
-                            false => Left(new ParsingError("expected to be at the end of line", input))
+                            false => Left(new TextParsingError("expected to be at the end of line", input))
                         });
 
 
-        public static Parser<char> Expect(Func<char, bool> checkChar, bool ignoreCommentCharacter = false) =>
-            from ch in ignoreCommentCharacter ? new Parser<char>(Read) : ReadSkippingComment
+        public static Parser<TextInput, char> Expect(Func<char, bool> checkChar, bool ignoreCommentCharacter = false) =>
+            from ch in ignoreCommentCharacter ? new Parser<TextInput, char>(Read) : ReadSkippingComment
             where checkChar(ch)
             select ch;
 
-        public static Parser<char> Expect(char ch) =>
+        public static Parser<TextInput, char> Expect(char ch) =>
             Expect(c => c == ch);
 
-        public static Parser<string> Lexem(Func<char, bool> firstChar, Func<char, bool> allTheOtherChars) =>
+        public static Parser<TextInput, string> Lexem(Func<char, bool> firstChar, Func<char, bool> allTheOtherChars) =>
             from firstOne in SkipWhitespaces.Then(Expect(firstChar))
             from theOtherOnes in Repeat(Expect(allTheOtherChars))
             select firstOne + string.Join(string.Empty, theOtherOnes);
 
-        public static Parser<string> Lexem(params string[] lexems) =>
+        public static Parser<TextInput, string> Lexem(params string[] lexems) =>
             SkipWhitespaces.Then(
                 input =>
                 {
@@ -75,15 +90,15 @@ namespace Prolog.Engine.Parsing
                         matchingCharacters = newMatchingCharacters;
                         input = nextChar.Right!.Rest;
 
-                        Either<ParsingError, Result<string>> MakeResult(string s) =>
+                        Either<TextParsingError, ParsingResult<TextInput, string>> MakeResult(string s) =>
                             lexems.Any(l => string.Equals(l, s, StringComparison.Ordinal))
-                                ? Right<ParsingError, Result<string>>(Result(s, input))
-                                : Left(new ParsingError($"Expected one of {string.Join(",", lexems)}", input));
+                                ? Right<TextParsingError, ParsingResult<TextInput, string>>(Result(s, input))
+                                : Left(new TextParsingError($"Expected one of {string.Join(",", lexems)}", input));
                     }
                 });
 
-        public static Parser<string> ReadTill(string lexem) =>
-            SkipWhitespaces.Then<string, string>(
+        public static Parser<TextInput, string> ReadTill(string lexem) =>
+            SkipWhitespaces.Then<TextInput, string, string>(
                 input => input.Text.IndexOf(lexem, input.Position, StringComparison.Ordinal) switch
                 {
                     var foundOffset when foundOffset >= 0 => 
@@ -92,26 +107,33 @@ namespace Prolog.Engine.Parsing
                                 input.Text.Substring(input.Position, foundOffset - input.Position), 
                                 input.MoveTo(foundOffset + lexem.Length))),
                     _ => Left(
-                            new ParsingError(
+                            new TextParsingError(
                                 $"Could not locate any further occurencies of '{lexem}'", 
                                 input))
                 });
 
         public static InvalidOperationException ParsingError(string message) => new (message);
 
-        private static Either<ParsingError, Result<char>> Read(TextInput input) =>
+        private static Either<TextParsingError, ParsingResult<TextInput, char>> Read(TextInput input) =>
             (input.Position < input.Text.Length) switch
             {
                 true => Right(Result(input.Text[input.Position], input.Skip(1))),
-                false => Left(new ParsingError($"Attempt to read past the end of the input '{input.Text}'.", input))
+                false => Left(new TextParsingError($"Attempt to read past the end of the input '{input.Text}'.", input))
             };
 
-        private static Either<ParsingError, Result<char>> ReadSkippingComment(TextInput input) =>
+        private static Either<TextParsingError, ParsingResult<TextInput, char>> ReadSkippingComment(TextInput input) =>
             (input.Position >= input.Text.Length) switch
             {
-                true => Left(new ParsingError($"Attempt to read past the end of the input '{input.Text}'.", input)),
+                true => Left(new TextParsingError($"Attempt to read past the end of the input '{input.Text}'.", input)),
                 false when input.Text[input.Position] != '%' => Right(Result(input.Text[input.Position], input.Skip(1))),
                 _ => Right(Result(' ', input.SkipToEndOfLine()))
             };
+
+        private static Parser<TextInput, bool> Eof =>
+            input => (input.Position == input.Text.Length) switch 
+                { 
+                    true => Right(Result(true, input)),
+                    false => Left(new TextParsingError("expected to be at the end of input", input))
+                };
     }
 }

@@ -5,6 +5,8 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Prolog.Engine
 {
+    using static MakeCompilerHappy;
+
     internal sealed class StandardOrderOfTerms : IComparer<Term>
     {
         public int Compare(Term? x, Term? y) =>
@@ -26,7 +28,7 @@ namespace Prolog.Engine
                                 .Select(it => Compare(it.First, it.Second))
                                 .TryFirst(it => it != 0)
                                 .OrElse(0)),
-                _ => GetTypeCode(x!).CompareTo(GetTypeCode(y!))
+                _ => GetTypeCode(SuppressCa1062(x)).CompareTo(GetTypeCode(SuppressCa1062(y)))
             };
 
         public string Compare1(Term? x, Term? y) =>

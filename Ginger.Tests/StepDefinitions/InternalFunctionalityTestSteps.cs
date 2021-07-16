@@ -10,10 +10,11 @@ using Ginger.Runner.Solarix;
 
 namespace Ginger.Tests.StepDefinitions
 {
+    using static MakeCompilerHappy;
+    using static MayBe;
     using static MonadicParsing;
     using static TextParsingPrimitives;
-    using static Prolog.Tests.VerboseReporting;
-    using static MakeCompilerHappy;
+    using static Prolog.Engine.PrettyPrinting;
 
     [Binding]
 #pragma warning disable CA1812 // Your class is an internal class that is apparently never instantiated on Derived class
@@ -60,9 +61,7 @@ namespace Ginger.Tests.StepDefinitions
                 from situation in situations.Rows
                 let sentence = situation["Sentence with ambiguous lemma versions"]
                 let expectedDisambiguation = situation["Proposed disambiguation"].Split(";").Select(s => s.Trim()).AsImmutable()
-                let actualDisambiguation = (from wordOrQuotation in _grammarParser.ParsePreservingQuotes(sentence).SentenceSyntax.IterateDepthFirst()
-                                            where wordOrQuotation.IsLeft
-                                            let word = wordOrQuotation.Left!
+                let actualDisambiguation = (from word in _grammarParser.ParsePreservingQuotes(sentence).SentenceStructure.IterateWordsDepthFirst()
                                             where word.LemmaVersions.Count > 1
                                             let disambiguator = LemmaVersionDisambiguator.Create(word.LemmaVersions)
                                             select disambiguator.ProposeDisambiguations(_russianLexicon)
@@ -71,8 +70,8 @@ namespace Ginger.Tests.StepDefinitions
                 select new 
                 { 
                     sentence, 
-                    ExpectedDisambiguation = Dump(expectedDisambiguation), 
-                    ActualDisambiguation = Dump(actualDisambiguation) 
+                    ExpectedDisambiguation = Print(expectedDisambiguation), 
+                    ActualDisambiguation = Print(actualDisambiguation) 
                 }
             ).AsImmutable();
 
@@ -91,22 +90,70 @@ namespace Ginger.Tests.StepDefinitions
                 let ambiguousWord = situation["Ambiguous word"]
                 let expectedLemmaVersion = ExpectedLemmaVersion.Parse(situation["Parsed Grammar Characteristics"])
                 let parsedText = _grammarParser
-                                    .ParsePreservingQuotes(
-                                        DisambiguatedPattern.Create(annotatedText, _russianLexicon)
-                                    ).SentenceSyntax
-                let parsedAmbiguousWord = parsedText.Left!
-                                            .LocateWord(
-                                                ambiguousWord,
-                                                errorText => new InvalidOperationException(errorText))
-                where parsedAmbiguousWord.LemmaVersions.Count != 1 || 
-                      !expectedLemmaVersion.Check(parsedAmbiguousWord.LemmaVersions.Single())
-                select new { annotatedText, expectedLemmaVersion, parsedAmbiguousWord.LemmaVersions }
+                                    .ParseAnnotatedPreservingQuotes(annotatedText, _russianLexicon)
+                                    .Disambiguate(_russianLexicon)
+                                    .SentenceStructure
+                let parsedAmbiguousWord = parsedText
+                                            .IterateDepthFirst()
+                                            .Where(it => !it.IsQuote)
+                                            .Single(word => Impl.RussianIgnoreCase.Equals(word.Content, ambiguousWord))
+                                            .Word.Value!
+                where !expectedLemmaVersion.Check(parsedAmbiguousWord.LemmaVersion)
+                select new { annotatedText, expectedLemmaVersion, parsedAmbiguousWord.LemmaVersion }
                 ).AsImmutable();
 
             Assert.IsFalse(
                 invalidSituations.Any(),
                 "Disambiguation annotations were processed incorrectly in the following cases:" + Environment.NewLine +
                 string.Join(Environment.NewLine, invalidSituations));
+        }
+
+        [Then("the following text markups should be parsed correctly")]
+        public void TestTextMarkupParsing(Table situations)
+        {
+            var invalidSituations = (
+                from situation in situations.GetMultilineRows()
+                let text = situation["Text"]
+                let actualParsingResult = _grammarParser.ParseMarkup(text)
+                let expectedParsingResult = situation["Parsing Results"].Split(Environment.NewLine).ConvertAll(BuildWord)
+                where !expectedParsingResult.SequenceEqual(actualParsingResult)
+                select new 
+                { 
+                    Text = text.Replace(Environment.NewLine, " "), 
+                    Expected = Print(expectedParsingResult), 
+                    Actual = Print(actualParsingResult) 
+                })
+                .AsImmutable();
+
+            Assert.IsFalse(
+                invalidSituations.Any(),
+                "Markup was parsed incorrectly in the following cases:" + Environment.NewLine +
+                string.Join(Environment.NewLine, invalidSituations));
+
+            static MarkedupWord BuildWord(string wordDescriptor) =>
+                wordDescriptor
+                    // ��� true PluralitySensitive [���,���]
+                    .Split(' ', 4, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Apply(components => 
+                        new MarkedupWord(
+                            Content: components[0],
+                            IsFixed: bool.Parse(components[1]),
+                            GenerationHint: components[2] switch
+                                {
+                                    "null" => None,
+                                    _ => Some((GenerationHint)Enum.Parse(typeof(GenerationHint), components[2]))
+                                },
+                            DisambiguatingCoordinates: components[3].Trim('[', ']') switch
+                                {
+                                    "" => None,
+                                    var coordinates => Some<IReadOnlyCollection<string>>(
+                                                            new StructuralEquatableArray<string>(
+                                                                coordinates.Split(
+                                                                    ',', 
+                                                                    StringSplitOptions.RemoveEmptyEntries | 
+                                                                    StringSplitOptions.TrimEntries)))
+                                }
+                        ));
         }
 
         private readonly IRussianGrammarParser _grammarParser;

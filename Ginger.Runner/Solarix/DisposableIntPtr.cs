@@ -1,4 +1,5 @@
 ﻿using System;
+using JetBrains.Annotations;
 
 namespace Ginger.Runner.Solarix
 {
@@ -6,11 +7,7 @@ namespace Ginger.Runner.Solarix
     {
         public DisposableIntPtr(IntPtr handle, Action<IntPtr> dispose, string objectName, IntPtr? nullValue = null)
         {
-            if (handle == (nullValue ?? IntPtr.Zero))
-            {
-                throw new ArgumentNullException(nameof(handle), "Could not create " + objectName);
-            }
-
+            CheckHandle(handle, objectName, nullValue);
             _handle = handle;
             _dispose = dispose;
             _objectName = objectName;
@@ -31,6 +28,15 @@ namespace Ginger.Runner.Solarix
             !@this._isDisposed 
                 ? @this._handle
                 : throw new ObjectDisposedException(@this._objectName);
+
+        [AssertionMethod]
+        private static void CheckHandle(IntPtr handle, string objectName, IntPtr? nullValue)
+        {
+            if (handle == (nullValue ?? IntPtr.Zero))
+            {
+                throw new ArgumentNullException(nameof(handle), "Could not create " + objectName);
+            }
+        }
 
         private readonly IntPtr _handle;
         private readonly Action<IntPtr> _dispose;
