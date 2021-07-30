@@ -60,9 +60,7 @@ namespace Ginger.Tests.StepDefinitions
                 from situation in situations.Rows
                 let sentence = situation["Sentence with ambiguous lemma versions"]
                 let expectedDisambiguation = situation["Proposed disambiguation"].Split(";").Select(s => s.Trim()).AsImmutable()
-                let actualDisambiguation = (from wordOrQuotation in _grammarParser.ParsePreservingQuotes(sentence).SentenceSyntax.IterateDepthFirst()
-                                            where wordOrQuotation.IsLeft
-                                            let word = wordOrQuotation.Left!
+                let actualDisambiguation = (from word in _grammarParser.ParsePreservingQuotes(sentence).SentenceSyntax.IterateWordsDepthFirst()
                                             where word.LemmaVersions.Count > 1
                                             let disambiguator = LemmaVersionDisambiguator.Create(word.LemmaVersions)
                                             select disambiguator.ProposeDisambiguations(_russianLexicon)

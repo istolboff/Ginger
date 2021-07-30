@@ -6,9 +6,9 @@ using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 using Prolog.Engine.Miscellaneous;
 using Ginger.Runner.Solarix;
-using Newtonsoft.Json.Converters;
 
 namespace Ginger.Tests
 {
@@ -36,17 +36,16 @@ namespace Ginger.Tests
                 });
         }
 
-        public void Dispose()
-        {
-            _wrappedParser.Dispose();
-        }
+        public string[] Tokenize(string text) =>
+            _wrappedParser.Tokenize(text);
 
-        private MayBe<IReadOnlyCollection<SentenceElement>> TryToRecallResult(string text)
-        {
-            return _knownSentences.TryGetValue(text, out var sentenceElements) 
+        public void Dispose() =>
+            _wrappedParser.Dispose();
+
+        private MayBe<IReadOnlyCollection<SentenceElement>> TryToRecallResult(string text) =>
+            _knownSentences.TryGetValue(text, out var sentenceElements) 
                         ? Some(sentenceElements.Value) 
                         : None;
-        }
 
         private void Memoize(string text, IReadOnlyCollection<SentenceElement> result)
         {
@@ -70,28 +69,22 @@ namespace Ginger.Tests
             }
         }
 
-        private static IDictionary<string, Lazy<IReadOnlyCollection<SentenceElement>>> LoadKnownSentences()
-        {
-            return File
+        private static IDictionary<string, Lazy<IReadOnlyCollection<SentenceElement>>> LoadKnownSentences() =>
+            File
                 .ReadLines(DataFilePath, Encoding.UTF8)
                 .Partition((text, serializedData) => new { text, serializedData })
                 .ToDictionary(
                     item => item.text, 
                     item => new Lazy<IReadOnlyCollection<SentenceElement>>(() => Deserialize(item.serializedData)),
                     RussianIgnoreCase);
-        }
 
-        private static string Serialize(IReadOnlyCollection<SentenceElement> sentenceElements)
-        {
-            return JsonConvert.SerializeObject(sentenceElements, SerializerSettings);
-        }
+        private static string Serialize(IReadOnlyCollection<SentenceElement> sentenceElements) =>
+            JsonConvert.SerializeObject(sentenceElements, SerializerSettings);
 
-        private static IReadOnlyCollection<SentenceElement> Deserialize(string serializedData)
-        {
-            return JsonConvert.DeserializeObject<IReadOnlyCollection<SentenceElement>>(
+        private static IReadOnlyCollection<SentenceElement> Deserialize(string serializedData) =>
+            JsonConvert.DeserializeObject<IReadOnlyCollection<SentenceElement>>(
                 serializedData,
                 SerializerSettings)!;
-        }
 
         private readonly IRussianGrammarParser _wrappedParser;
         private readonly IDictionary<string, Lazy<IReadOnlyCollection<SentenceElement>>> _knownSentences;

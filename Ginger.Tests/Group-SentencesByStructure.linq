@@ -28,8 +28,8 @@ void Main()
 	
 	new[]
 	{
-		"Если волк и коза располагается на одном конце бревна, а заяц располагается на другом конце бревна, то история завершается успехом с темой апперцепция",
-		"Если волк и коза находятся на одном береге реки, а фермер находится на другом береге реки, то миссия заканчивается неудачей с формулировкой апперцепция"
+		"Если волк и коза располагаются на одном конце острова, а заяц располагается на другом конце острова, то история завершается успехом с диагнозом апперцепция",
+		"Если волк и коза находятся на одном береге острова, а фермер находится на другом береге острова, то миссия заканчивается неудачей с формулировкой апперцепция"
 	}
 	.Select(text => new { Text = text, Structure = Parse(text) })
 	.GroupBy(it => JsonSerializer.Serialize(it.Structure, _jsonSerializerOptions))
@@ -79,7 +79,7 @@ private SentenceElement DumpSentenceElement(IntPtr hNode, int? leafType = null)
 {
     var content = GrammarEngine.sol_GetNodeContentsFX(hNode);
 
-    var lemmaVersion = Enumerable.Range(0, GrammarEngine.sol_GetNodeVersionCount(_engineHandle, hNode))
+    var allLemmaVersions = Enumerable.Range(0, GrammarEngine.sol_GetNodeVersionCount(_engineHandle, hNode))
         .Select(versionIndex => 
         new
         {
@@ -119,9 +119,25 @@ private SentenceElement DumpSentenceElement(IntPtr hNode, int? leafType = null)
 									return string.Empty;
 					            })
 								.Where(s => !string.IsNullOrEmpty(s)));
-            return new { partOfSpeech, coordinates };
+            return new { partOfSpeech, coordinates, entryVersionId };
         })
-		.Single();
+		.ToArray();
+	
+	if (allLemmaVersions.Length > 1)
+	{
+		throw new InvalidOperationException(
+			"More than one possible treatment of the following word: " + 
+			string.Join(
+				"; ", 
+				allLemmaVersions.Select(lv => 
+				{
+					var lemma = CreateBuffer();
+					SuppressCa1806(GrammarEngine.sol_GetEntryName(_engineHandle, lv.entryVersionId, lemma));
+					return lemma;
+				})));
+	}
+	
+	var lemmaVersion = allLemmaVersions.Single();
 
 	return new SentenceElement(
 					lemmaVersion.partOfSpeech, 
@@ -135,7 +151,6 @@ private SentenceElement DumpSentenceElement(IntPtr hNode, int? leafType = null)
 						.ToList(), 
 					leafType.HasValue ? ((LinkType)leafType).ToString() : string.Empty);
 }
-
 
 record SentenceElement(string PartOfSpeech, string Coordinates, IReadOnlyList<SentenceElement> Children, string LeafLinkType);
 
