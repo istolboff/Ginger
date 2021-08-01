@@ -22,6 +22,9 @@ namespace Ginger.Tests
 
             PatternBuilder.PatternRecognitionEvent += (log, checkSucceeded) => 
                 File.AppendAllText(logFilePath, $"{(checkSucceeded ? "succeeded" : "failed")}\tCheck for {log}{Environment.NewLine}");
+
+            GenerativePattern.PatternBuildingEvent += message => 
+                File.AppendAllText(logFilePath, $"Generative Pattern Building Event: {message}" + Environment.NewLine);
         }
     }
 }

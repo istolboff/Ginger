@@ -31,17 +31,17 @@ namespace Ginger.Runner
             return new (disambiguatedPattern.PlainText, sentence, annotatedWords, andAllTheirLemmas.ToHashSet());
         }
 
+        public static DisambiguatedPattern RemoveAnnotations(DisambiguatedPattern disambiguatedPattern) =>
+            disambiguatedPattern with 
+            {
+                PlainText = AnnotatedWordsMatcher.Replace(disambiguatedPattern.PlainText, m => m.Groups[1].Value)
+            };
+
         private static IReadOnlyCollection<string> GetAnnotatedWords(string text) =>
             AnnotatedWordsMatcher
                 .Matches(text)
                 .SelectMany(m => m.Groups[1].Value.Split(' ', ',', ';', '-', ':'))
                 .AsImmutable();
-
-        private static DisambiguatedPattern RemoveAnnotations(DisambiguatedPattern disambiguatedPattern) =>
-            disambiguatedPattern with 
-            {
-                PlainText = AnnotatedWordsMatcher.Replace(disambiguatedPattern.PlainText, m => m.Groups[1].Value)
-            };
 
         private static IEnumerable<LemmaVersion> GetAllWordLemmas(
             WordOrQuotation wordOrQuotation, 

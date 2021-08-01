@@ -22,6 +22,9 @@ namespace Ginger.Runner
                 .SelectMany(it => ReplicatableWordPattern.Generate(it.Pattern, it.Meaning, grammarParser, russianLexicon))
                 .Select(it => it with { Meaning = MeaningMetaModifiers.Preprocess(it.Meaning) });
 
+        
+        public static event Action<string>? PatternBuildingEvent;
+
         private static class ReplicatableWordPattern
         {
             public static IEnumerable<PatternWithMeaning> Generate(
@@ -37,8 +40,7 @@ namespace Ginger.Runner
                 }
 
                 var replicatableWordsIndexes = CalculateIndexesOfReplicatableWordInPattern(
-                    patternText, 
-                    matchCollection.ToArray());
+                    AnnotatedGrammar.RemoveAnnotations(DisambiguatedPattern.Create(patternText, russianLexicon)).PlainText);
 
                 var replicatableWordElements = (
                         from matchWithIndex in matchCollection.Select((match, matchIndex) => (match, matchIndex))
@@ -77,6 +79,11 @@ namespace Ginger.Runner
                     return PlainPattern();
                 }
 
+                PatternBuildingEvent?.Invoke(new 
+                    { 
+                        ParsedPattern = string.Join(", ", parsedPattern.IterateWordsDepthFirst().Select(w => $"{w.Content}({w.PositionInSentence})"))
+                    }.ToString()!);
+                    
                 if (replicatableWordElements
                         .Where(ge => ge.generationHint == GenerationHint.Replicatable)
                         .Any(ge => ge.lemmaDisambiguator != null))
@@ -204,12 +211,11 @@ namespace Ginger.Runner
                             $"'{word}{PluralSensitivityHintText}': Слова, переходящие во множественное число при репликации, " +
                             "всегда должны иметь мужской род");
 
-                int[] CalculateIndexesOfReplicatableWordInPattern(
-                    string patternText, 
-                    Match[] replicatableWordSites)
+                int[] CalculateIndexesOfReplicatableWordInPattern(string patternText)
                 {
-                    var hintRemovers = Array.ConvertAll(
-                        replicatableWordSites,
+                    var replicatableWordSites = ReplicatableWordRegex.Matches(patternText);
+
+                    var hintRemovers = replicatableWordSites.ConvertAll(
                         site => 
                             new StringAdjustingOperation(
                                 new SubstringLocation(site.Index, site.Length), 
@@ -217,7 +223,8 @@ namespace Ginger.Runner
 
                     var patternWithRemovedHints = AdjustText(patternText, hintRemovers);
                     var patternTokens = grammarParser.Tokenize(patternWithRemovedHints);
-                    return (from n in Enumerable.Range(0, hintRemovers.Length)
+                    var result = 
+                           (from n in Enumerable.Range(0, hintRemovers.Count)
                             let nFirstHintsRemoved = AdjustText(patternText, hintRemovers.Take(n))
                             let tokens = grammarParser.Tokenize(nFirstHintsRemoved)
                             select IndexOfFirstDifference(patternTokens, tokens)
@@ -225,9 +232,21 @@ namespace Ginger.Runner
                                         "Impossible situation - pattern with all hints removed differs from the " + 
                                         $"pattern where only first {n} hints were removed in the very first token."))
                                     .OrElse(() => throw ProgramLogic.Error(
-                                        $"Could not find the index of the word '{hintRemovers[n].NewContent}' " + 
+                                        $"Could not find the index of the word '{hintRemovers.ElementAt(n).NewContent}' " + 
                                         "in sentence that is marked as replicatable.")))
                             .ToArray();
+
+                    PatternBuildingEvent?.Invoke(new 
+                        { 
+                            patternText,
+                            PatternTokens = string.Join(", ", patternTokens.Select((w, i) => $"{w}({i})")),
+                            IndexesOfReplicatableWordsInPattern = 
+                                string.Join(
+                                    ", ", 
+                                    hintRemovers.Zip(result, (hr, i) => $"{hr.NewContent}({i})"))
+                        }.ToString()!);
+
+                    return result;
                 }
 
                 static MayBe<int> IndexOfFirstDifference(IEnumerable<string> first, IEnumerable<string> second) =>
