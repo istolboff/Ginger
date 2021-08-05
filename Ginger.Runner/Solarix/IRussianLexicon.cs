@@ -8,6 +8,8 @@ namespace Ginger.Runner.Solarix
         string GetNeutralForm(string word);
         
         string GenerateWordForm(string word, PartOfSpeech? partOfSpeech, GrammarCharacteristics characteristics);
+
+        IReadOnlyCollection<string> GenerateWordForms(int entryId, (int CoordinateId, int StateId)[] coordinateStates);
         
         string GetPluralForm(LemmaVersion lemmaVersion);
 
@@ -15,6 +17,6 @@ namespace Ginger.Runner.Solarix
 
         string GetStateName(int categoryId, int stateId);
 
-        (Type[] CoordinateTypes, int[] CoordinateEnumValues) ResolveCoordinates(IEnumerable<string> valueNames);
+        (Type CoordinateType, string ValueName, int CoordinateEnumValue)[] ResolveCoordinates(IEnumerable<string> valueNames);
     }
 }

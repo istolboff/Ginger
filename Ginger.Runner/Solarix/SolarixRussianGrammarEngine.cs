@@ -44,13 +44,11 @@ namespace Ginger.Runner.Solarix
                                     GetNodeVersionCoordinateState<Case>(hNode, versionIndex),
                                     GetNodeVersionCoordinateState<Number>(hNode, versionIndex),
                                     GetNodeVersionCoordinateState<Gender>(hNode, versionIndex),
-                                    TryGetNodeVersionCoordinateState<Form>(hNode, versionIndex),
                                     infinitive),
                                 () => new NounCharacteristics(
                                     GetNodeVersionCoordinateState<Case>(hNode, versionIndex),
                                     GetNodeVersionCoordinateState<Number>(hNode, versionIndex),
-                                    GetNodeVersionCoordinateState<Gender>(hNode, versionIndex),
-                                    TryGetNodeVersionCoordinateState<Form>(hNode, versionIndex)))
+                                    GetNodeVersionCoordinateState<Gender>(hNode, versionIndex)))
                     },
                     {
                         PartOfSpeech.Глагол,
@@ -160,7 +158,8 @@ namespace Ginger.Runner.Solarix
         }
 
         public string[] Tokenize(string text) =>
-            GrammarEngine.sol_TokenizeFX(_engineHandle, text, GrammarEngineAPI.RUSSIAN_LANGUAGE);
+            WorkaroundForBugWhenSometimesTokenizationDoesNotSplitWords(
+                GrammarEngine.sol_TokenizeFX(_engineHandle, text, GrammarEngineAPI.RUSSIAN_LANGUAGE));
 
         public string GetNeutralForm(string word)
         {
@@ -191,7 +190,7 @@ namespace Ginger.Runner.Solarix
 
             if (entryId == -1)
             {
-                throw new NotImplementedException($"Could not find {partOfSpeech} '{word}' in lexicon.");
+                throw new InvalidOperationException($"Could not find {partOfSpeech} '{word}' in lexicon.");
             }
 
             var result = GenerateWordForms(
@@ -204,7 +203,19 @@ namespace Ginger.Runner.Solarix
 
             return !string.IsNullOrEmpty(result)
                 ? result
-                : throw new InvalidOperationException($"Could not put the word 'word' to the form {characteristics}");
+                : throw new InvalidOperationException($"Could not put the word '{word}' to the form {characteristics}");
+        }
+
+        public IReadOnlyCollection<string> GenerateWordForms(int entryId, (int CoordinateId, int StateId)[] coordinateStates)
+        {
+            var grammarForms = coordinateStates.SelectMany(cs => new[] { cs.CoordinateId, cs.StateId }).ToArray();
+            var hstr = GrammarEngine.sol_GenerateWordforms(_engineHandle, entryId, coordinateStates.Length, grammarForms);
+            var result = Enumerable
+                            .Range(0, GrammarEngine.sol_CountStrings(hstr))
+                            .Select(i => GrammarEngine.sol_GetStringFX(hstr, i).ToLower(Russian))
+                            .AsImmutable();
+            SuppressCa1806(GrammarEngine.sol_DeleteStrings(hstr));
+            return result;
         }
 
         public string GetPluralForm(LemmaVersion lemmaVersion)
@@ -255,14 +266,12 @@ namespace Ginger.Runner.Solarix
             return buffer.ToString().ToLower(Russian);
         }
 
-        public (Type[] CoordinateTypes, int[] CoordinateEnumValues) ResolveCoordinates(IEnumerable<string> valueNames) 
-        {
-            var result = valueNames.Select(name => _knownCoordStateNames[name]).ToArray();
-            return (
-                Array.ConvertAll(result, it => it.CoordinateType),
-                Array.ConvertAll(result, it => it.StateId)
-                );
-        }
+        public (Type CoordinateType, string ValueName, int CoordinateEnumValue)[] ResolveCoordinates(
+            IEnumerable<string> valueNames) =>
+                (from name in valueNames
+                 let it = _knownCoordStateNames[name]
+                 select (it.CoordinateType, name, it.StateId)
+                ).ToArray();
 
         public void Dispose()
         {
@@ -273,6 +282,8 @@ namespace Ginger.Runner.Solarix
         {
             var content = GrammarEngine.sol_GetNodeContentsFX(hNode);
             
+            var position = GrammarEngine.sol_GetNodePosition(hNode);
+
             var position = GrammarEngine.sol_GetNodePosition(hNode);
 
             var lemmaVersions = Enumerable.Range(0, GrammarEngine.sol_GetNodeVersionCount(_engineHandle, hNode))
@@ -308,18 +319,6 @@ namespace Ginger.Runner.Solarix
                 PositionInSentence: position);
         }
 
-        private IReadOnlyCollection<string> GenerateWordForms(int entryId, (int CoordinateId, int StateId)[] coordinateStates)
-        {
-            var grammarForms = coordinateStates.SelectMany(cs => new[] { cs.CoordinateId, cs.StateId }).ToArray();
-            var hstr = GrammarEngine.sol_GenerateWordforms(_engineHandle, entryId, coordinateStates.Length, grammarForms);
-            var result = Enumerable
-                            .Range(0, GrammarEngine.sol_CountStrings(hstr))
-                            .Select(i => GrammarEngine.sol_GetStringFX(hstr, i).ToLower(Russian))
-                            .AsImmutable();
-            SuppressCa1806(GrammarEngine.sol_DeleteStrings(hstr));
-            return result;
-        }
-
         private IReadOnlyCollection<T> ProjectWord<T>(
             string word, 
             Func<IntPtr, int, T> projectionSelector, 
@@ -341,7 +340,7 @@ namespace Ginger.Runner.Solarix
                     GrammarEngine.sol_GetIEntry(projections, i));
         }
 
-        MayBe<int> TryFindMasculineForm(LemmaVersion lemmaVersion) =>
+        private MayBe<int> TryFindMasculineForm(LemmaVersion lemmaVersion) =>
             lemmaVersion.Characteristics switch
             {
                 NounCharacteristics noun => noun.Gender == Gender.Мужской 
@@ -352,7 +351,7 @@ namespace Ginger.Runner.Solarix
                 _ => Some(lemmaVersion.EntryId)
             };
 
-        IReadOnlyCollection<int> TryFindLinks(int entryId, int linkType)
+        private IReadOnlyCollection<int> TryFindLinks(int entryId, int linkType)
         {
             var linksList = GrammarEngine.sol_ListLinksTxt(_engineHandle, entryId, linkType, 0);
             if (linksList == IntPtr.Zero)
@@ -490,6 +489,14 @@ namespace Ginger.Runner.Solarix
 
         private StringBuilder CreateBuffer() =>
             new (GrammarEngine.sol_MaxLexemLen(_engineHandle));
+
+        
+        private static string[] WorkaroundForBugWhenSometimesTokenizationDoesNotSplitWords(IEnumerable<string> tokens) =>
+            tokens
+                .SelectMany(token => token.Contains(' ') 
+                                ? token.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                : token.ToImmutable())
+                .ToArray();
 
         private readonly DisposableIntPtr _engineHandle;
         private readonly IDictionary<PartOfSpeech, Func<IntPtr, int, GrammarCharacteristics>> _grammarCharacteristicsBuilders;

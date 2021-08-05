@@ -14,6 +14,7 @@ namespace Ginger.Tests.StepDefinitions
     using static Either;
     using static MakeCompilerHappy;
     using static MonadicParsing;
+    using static TextParsingPrimitives;
     using static PrologParser;
     using static Prolog.Tests.VerboseReporting;
 
@@ -122,8 +123,8 @@ namespace Ginger.Tests.StepDefinitions
                                                         .Select(s => s.Trim())
                     let actualConcretePatterns = MakeGenerativePattern(generativePatternText)
                                                     .GenerateConcretePatterns(_grammarParser, _russianLexicon)
-                                                    .Select(it => it.Pattern)
-                    where !expectedConcretePatterns.SequenceEqual(actualConcretePatterns)
+                                                    .Select(it => it.Pattern.Sentence)
+                    where !expectedConcretePatterns.SequenceEqual(actualConcretePatterns, Impl.RussianIgnoreCase)
                     select new 
                     { 
                         GenerativePatternText = generativePatternText + Environment.NewLine, 
@@ -131,7 +132,7 @@ namespace Ginger.Tests.StepDefinitions
                                                                     Environment.NewLine + Environment.NewLine, 
                                                                     expectedConcretePatterns
                                                                         .Zip(actualConcretePatterns)
-                                                                        .Where(it => it.First != it.Second)
+                                                                        .Where(it => !Impl.RussianIgnoreCase.Equals(it.First, it.Second))
                                                                         .Select(it => $" +  !{it.First}!{Environment.NewLine} -  !{it.Second}!"))
                     }
                 ).AsImmutable();

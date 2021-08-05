@@ -20,7 +20,7 @@ void Main()
         throw new InvalidOperationException($"Could not load Dictionary from {DefaultSolarixDictionaryXmlPath}. {DescribeError()}");
     }
 
-	Parse("старик переходит с одной стороны улицы на другую сторону улицы");
+	Parse("Если коза и капуста находятся на одном береге реки, то все плохо.");
 //	DescribeProjections("одному", "Case", "Number", "Gender", "Form").Dump();
 
 	_engineHandle.Dispose();
@@ -32,8 +32,8 @@ public void Parse(string text)
     var hPack = IntPtr.Zero;
     try
     {
-		var words = GrammarEngine.sol_TokenizeFX(_engineHandle, text, GrammarEngineAPI.RUSSIAN_LANGUAGE);
-		words.Select((word, index) => new { word, index }).Dump();
+		//var words = GrammarEngine.sol_TokenizeFX(_engineHandle, text, GrammarEngineAPI.RUSSIAN_LANGUAGE);
+		//words.Select((word, index) => new { word, index }).Dump();
 	
         hPack = GrammarEngine.sol_SyntaxAnalysis(
             _engineHandle,

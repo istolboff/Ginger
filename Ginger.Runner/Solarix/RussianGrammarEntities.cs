@@ -193,12 +193,6 @@ namespace Ginger.Runner.Solarix
         Средний = GrammarEngineAPI.NEUTRAL_GENDER_ru
     }
 
-    internal enum Form
-    {
-        Одушевленный = GrammarEngineAPI.ANIMATIVE_FORM_ru,
-        Неодушевленный = GrammarEngineAPI.INANIMATIVE_FORM_ru
-    }
-
     internal enum AdjectiveForm
     {
         Полное,
@@ -224,8 +218,8 @@ namespace Ginger.Runner.Solarix
             {
                 new AdjectiveCharacteristics(default, default, default, default, default),
                 new VerbCharacteristics(default, default, default, default, default, default, default),
-                new NounCharacteristics(default, default, default, default),
-                new VerbalNounCharacteristics(default, default, default, default, string.Empty),
+                new NounCharacteristics(default, default, default),
+                new VerbalNounCharacteristics(default, default, default, string.Empty),
                 new PronounCharacteristics(default, default, default, default),
                 new AdverbCharacteristics(default),
                 new GerundCharacteristics(default, default),
@@ -242,7 +236,6 @@ namespace Ginger.Runner.Solarix
                 { typeof(Case), GrammarEngineAPI.CASE_ru },
                 { typeof(Number), GrammarEngineAPI.NUMBER_ru },
                 { typeof(Gender), GrammarEngineAPI.GENDER_ru },
-                { typeof(Form), GrammarEngineAPI.FORM_ru },
                 { typeof(Person), GrammarEngineAPI.PERSON_ru },
                 { typeof(VerbForm), GrammarEngineAPI.VERB_FORM_ru },
                 { typeof(VerbAspect), GrammarEngineAPI.ASPECT_ru },
@@ -283,7 +276,9 @@ namespace Ginger.Runner.Solarix
                 _ => throw ProgramLogic.Error($"Please add switch branch for {GetType().Name} in GrammarCharacteristics.TryGetGender()")
             };
 
-        public (int CoordinateId, int StateId)[] ToCoordIdStateIdPairArray(Func<int, int, (int CoordinateId, int StateId)?> adjustCoordIdStateIdPair) =>
+        public (int CoordinateId, int StateId)[] ToCoordIdStateIdPairArray(
+            Func<int, int, (int CoordinateId, int StateId)?> adjustCoordIdStateIdPair) 
+        =>
             (from property in GetType().GetProperties()
             let propertyType = property.PropertyType.RemoveNullability()
             where propertyType.IsEnum
@@ -317,15 +312,14 @@ namespace Ginger.Runner.Solarix
 
     internal sealed record AdverbCharacteristics(ComparisonForm ComparisonForm) : GrammarCharacteristics;
 
-    internal record NounCharacteristics(Case Case, Number Number, Gender Gender, Form? Form) : GrammarCharacteristics;
+    internal record NounCharacteristics(Case Case, Number Number, Gender Gender) : GrammarCharacteristics;
 
     internal sealed record VerbalNounCharacteristics(
         Case Case, 
         Number Number, 
         Gender Gender, 
-        Form? Form, 
         string RelatedInfinitive) 
-        : NounCharacteristics(Case, Number, Gender, Form);
+        : NounCharacteristics(Case, Number, Gender);
 
     internal sealed record PronounCharacteristics(Case Case, Gender? Gender, Number Number, Person Person) : GrammarCharacteristics;
 

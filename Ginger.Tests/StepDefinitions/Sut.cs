@@ -105,7 +105,7 @@ namespace Ginger.Tests.StepDefinitions
                 };
 
             static SentenceMeaning MakeSentenceMeaningComparable(SentenceMeaning sentenceMeaning) =>
-                sentenceMeaning.Fold2(
+                sentenceMeaning.Map2(
                     rules => new StructuralEquatableArray<Rule>(rules) as IReadOnlyCollection<Rule>,
                     statements => new StructuralEquatableArray<ComplexTerm>(statements) as IReadOnlyCollection<ComplexTerm>);
         }

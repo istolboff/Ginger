@@ -47,7 +47,7 @@ namespace Prolog.Tests
         }
 
         private static string GetTraceFilePath(this TestContext testContext) =>
-            Path.Combine(testContext.TestLogsDir, "Prolog.trace");
+            Path.Combine(testContext.TestLogsDir, "MonadicParsing.trace");
 
         private static bool _loggingInitialized;
         private static string? _traceFilePath;

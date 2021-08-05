@@ -9,16 +9,16 @@ namespace Prolog.Engine.Miscellaneous
         public TResult Fold<TResult>(Func<TLeft, TResult> getFromLeft, Func<TRight, TResult> getFromRight) =>
             IsLeft ? getFromLeft(Left!) : getFromRight(Right!);
 
-        public Either<TLeftResult, TRightResult> Fold2<TLeftResult, TRightResult>(
+        public Either<TLeft, TResult> Map<TResult>(Func<TRight, TResult> getFromRight) =>
+            IsLeft ? Left<TLeft, TResult>(Left!) : Right<TLeft, TResult>(getFromRight(Right!));
+
+        public Either<TLeftResult, TRightResult> Map2<TLeftResult, TRightResult>(
             Func<TLeft, TLeftResult> getFromLeft,
             Func<TRight, TRightResult> getFromRight) 
         =>
             IsLeft 
                 ? Left<TLeftResult, TRightResult>(getFromLeft(Left!)) 
                 : Right<TLeftResult, TRightResult>(getFromRight(Right!));
-
-        public Either<TLeft, TResult> Map<TResult>(Func<TRight, TResult> getFromRight) =>
-            IsLeft ? Left<TLeft, TResult>(Left!) : Right<TLeft, TResult>(getFromRight(Right!));
 
         public Either<TResult, TRight> MapLeft<TResult>(Func<TLeft, TResult> getFromLeft) =>
             IsLeft ? Left<TResult, TRight>(getFromLeft(Left!)) : Right<TResult, TRight>(Right!);

@@ -11,7 +11,6 @@ namespace Ginger.Runner
     using static MayBe;
     using static PatternBuilder;
 
-    using WordOrQuotation = Either<Word, Quotation>;
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
     
     internal static class MeaningMetaModifiers
@@ -22,31 +21,29 @@ namespace Ginger.Runner
                 functor.Name.StartsWith('@');
 
         public static SentenceMeaning Preprocess(SentenceMeaning meaning) =>
-            meaning.Fold2(rules => rules.ConvertAll(Preprocess), statements => statements.ConvertAll(Preprocess));
+            meaning.Map2(rules => rules.ConvertAll(Preprocess), statements => statements.ConvertAll(Preprocess));
 
-        public static Func<WordOrQuotation, MayBe<ComplexTerm>> MakeUnderstander(
+        public static Func<ParsedSentence, MayBe<ComplexTerm>> MakeUnderstander(
             IRussianGrammarParser grammarParser,
             SentenceUnderstander sentenceUnderstander,
-            Func<WordOrQuotation, string> relevantQuoteGetter) =>
+            Func<ParsedSentence, string> relevantQuoteGetter) =>
             sentence => 
             {
                 var quote = relevantQuoteGetter(sentence);
                 var parsedQuote = grammarParser.ParsePreservingQuotes(quote);
                 return sentenceUnderstander.Understand(parsedQuote)
                         .Map(it => it.Meaning.Fold(
-                            _ => LogChecking(
+                            _ => LogCheckingT(
                                     None, 
-                                    $"understanding of '{quote}' produced one or more Rules. Only a set of statements is supported.",
-                                    false),
-                            statements => LogChecking(
+                                    $"understanding of '{quote}' produced one or more Rules. Only a set of statements is supported."),
+                            statements => LogCheckingT(
                                 Some(ComplexTerm(
                                         Functor(InlinerFunctorName, statements.Count),
                                         statements)),
                                 $"undestanding of '{quote}'")))
-                        .OrElse(() => LogChecking(
+                        .OrElse(() => LogCheckingT(
                                     None, 
-                                    $"understanding of '{quote}'.", 
-                                    false));
+                                    $"understanding of '{quote}'."));
             };
 
         public static ComplexTerm AccomodateInlinedArguments(FunctorBase functor, IReadOnlyCollection<Term> arguments)

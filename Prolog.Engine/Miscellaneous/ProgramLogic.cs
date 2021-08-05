@@ -16,5 +16,11 @@ namespace Prolog.Engine.Miscellaneous
                 throw Error(message);
             }
         }
+
+        [AssertionMethod]
+        public static void Check(MayBe<string> error)
+        {
+            Check(!error.HasValue, error.OrElse(string.Empty));
+        }
     }
 }

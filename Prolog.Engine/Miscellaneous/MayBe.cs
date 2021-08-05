@@ -45,6 +45,9 @@ namespace Prolog.Engine.Miscellaneous
         public T OrElse(Func<T> defaultValue) => 
             HasValue ? Value! : defaultValue();
 
+        public override string? ToString() => 
+            HasValue ? Value!.ToString() : "null";
+
 #pragma warning disable CA2225 // Provide a method named 'ToEither' as an alternate for operator op_Implicit
 #pragma warning disable CA1801 // Review unused parameters
         public static implicit operator MayBe<T>([UsedImplicitly] syntacticshugar_NoneProducer unused) =>
@@ -52,10 +55,22 @@ namespace Prolog.Engine.Miscellaneous
             new (default, false);
 #pragma warning restore CA2225
 
+        public static bool operator == (MayBe<T> @this, T value) =>
+            @this
+                .Map(v => TImplementsIEquatable 
+                            ? ((IEquatable<T>)v!).Equals(value) 
+                            : v!.Equals(value))
+                .OrElse(false);
+
+        public static bool operator != (MayBe<T> @this, T value) =>
+            !(@this == value!);
+
         public static implicit operator MayBe<T>(MayBe<MayBe<T>> nestedMayBe) =>
             nestedMayBe.HasValue && nestedMayBe.Value!.HasValue 
                 ? MayBe.Some(nestedMayBe.Value!.Value!) 
                 : MayBe.None;
+
+        private static readonly bool TImplementsIEquatable = typeof(IEquatable<T>).IsAssignableFrom(typeof(T));
     }
 
 #pragma warning disable CA1707 // Remove the underscores from type name
