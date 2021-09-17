@@ -284,8 +284,6 @@ namespace Ginger.Runner.Solarix
             
             var position = GrammarEngine.sol_GetNodePosition(hNode);
 
-            var position = GrammarEngine.sol_GetNodePosition(hNode);
-
             var lemmaVersions = Enumerable.Range(0, GrammarEngine.sol_GetNodeVersionCount(_engineHandle, hNode))
                 .Select(versionIndex => 
                 new

@@ -25,7 +25,7 @@ namespace Ginger.Runner.Solarix
         {
             ProgramLogic.Check(
                 lemmaVersions.Count > 1,
-                "Disambiguator is meaningful for at least 2 lemma versions.");
+                "A disambiguator is meaningful for at least 2 lemma versions.");
 
             var groupedByCharacteristicTypes = lemmaVersions
                                                 .GroupBy(lv => lv.Characteristics.GetType())

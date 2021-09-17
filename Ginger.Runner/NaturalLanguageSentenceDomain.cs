@@ -79,17 +79,36 @@ namespace Ginger.Runner
         LinkType? LeafLinkType,
         WordAnnotations Annotations)
     {
-        public LemmaVersion DisambiguatedLemmaVersion => 
+        public LemmaVersion GetDisambiguatedLemmaVersion(
+            IRussianLexicon russianLexicon, 
+            bool enforceLemmaVersions,
+            Func<string, Exception> reportError) => 
             Annotations.LemmaVersionPicker
-                .Map(picker => LemmaVersions.Single(
+                .Map(picker => LemmaVersions
+                        .TrySingle(
                             lv => picker.CheckLemmaVersion(lv.Characteristics),
-                            _ => new InvalidOperationException(
-                                $"Disambiguator '{picker.Definition}' could not pick a single lemma version for {Content}")))
+                            matchingLemmaVersions => throw reportError(
+                                $"Disambiguator ({picker.Definition}) could not pick a single lemma version for '{Content}'. " + 
+                                "The following lemma versions all match: " + string.Join(";", matchingLemmaVersions) +
+                                ". In order to fully disambiguate, please use one of the following: " + Environment.NewLine +
+                                string.Join(Environment.NewLine, AnnotatedSentence.BuildDisambiguatingAnnotations(LemmaVersions, russianLexicon))))
+                        .OrElse(() => 
+                            enforceLemmaVersions
+                                ? picker
+                                    .TryProduceLemmaVersion(LemmaVersions, russianLexicon)
+                                    .OrElse(() => throw reportError(
+                                        $"Could not produce LemmaVersion for ({picker.Definition}) from these lemma versions: " +
+                                        string.Join(";", LemmaVersions)))
+                                : throw reportError(
+                                    $"Disambiguator ({picker.Definition}) didn't match any of possible lemma version alternatives: " + 
+                                    string.Join(";", LemmaVersions))))
                 .OrElse(() => LemmaVersions.Single(
                             _ => true, 
-                            _ => new InvalidOperationException(
-                                $"Missing disambiguation for {Content}: there are {LemmaVersions.Count} " + 
-                                "possible lemma versions, but no disambiguating instructions are specified.")));
+                            _ => throw reportError(
+                                    $"Missing disambiguation for {Content}: there are these lemma versions: {string.Join(";", LemmaVersions)} " + 
+                                    " and they can be fully disambiguated with one of the following:" + Environment.NewLine +
+                                    string.Join(Environment.NewLine, AnnotatedSentence.BuildDisambiguatingAnnotations(LemmaVersions, russianLexicon)) + 
+                                    ", but no disambiguation has been specified.")));
 
         public LemmaVersion GetSingleLemmaVersion(
             Func<IReadOnlyCollection<LemmaVersion>, Exception> reportMultipleLemmaVersionsError,
@@ -107,7 +126,7 @@ namespace Ginger.Runner
 
     internal sealed record AnnotatedSentence(string Sentence, WordOrQuotation<AnnotatedWord> SentenceStructure)
     {
-        public AnnotatedSentence Map(
+        public AnnotatedSentence Transform(
             Func<AnnotatedWord, string> mapWord, 
             IRussianGrammarParser grammarParser, 
             IRussianLexicon russianLexicon) 
@@ -120,41 +139,45 @@ namespace Ginger.Runner
                         .Select(it => it.Word.Fold(mapWord, () => $"'{it.Content}'"))),
                 russianLexicon);
 
-        public DisambiguatedSentence Disambiguate(IRussianLexicon russianLexicon)
-        {
-            return new (
+        public DisambiguatedSentence Disambiguate(IRussianLexicon russianLexicon, bool enforceLemmaVersions = false) =>
+             new (
                 Normalize(SentenceStructure), 
                 Sentence, 
                 SentenceStructure.Map(word => 
                 {
                     if (word.LemmaVersions.HasMoreThanOneElement() && !word.Annotations.LemmaVersionPicker.HasValue)
                     {
-                        var annotationVariants = string.Join(";", BuildDisambiguatingAnnotations(word.LemmaVersions));
+                        var annotationVariants = string.Join(";", BuildDisambiguatingAnnotations(word.LemmaVersions, russianLexicon));
                         throw new InvalidOperationException(
-                                $"There are several lemma versions of the word '{word.Content}' in pattern '{Sentence}'. " +
-                                $"You can annotate the word with one of the following variants {annotationVariants}, " + 
+                                $"The word '{word.Content}' in pattern '{Sentence}' has the following lemma versions: " +
+                                string.Join("; ", word.LemmaVersions) +
+                                $". You can annotate the word with one of the following variants {annotationVariants} in order to disambiguate it, " + 
                                 "or reformulate the pattern wording.");
                     }
 
                     return new DisambiguatedWord(
-                                word.DisambiguatedLemmaVersion, 
+                                word.GetDisambiguatedLemmaVersion(
+                                    russianLexicon,
+                                    enforceLemmaVersions,
+                                    message => new InvalidOperationException($"Sentence '{Sentence}': {message}")),
                                 word.Annotations.IsFixed,
                                 word.LeafLinkType);
                 }));
 
-            static string Normalize(WordOrQuotation<AnnotatedWord> sentenceStructure) =>
-                TextManipulation.Join(
-                    (_, it) => it.All(char.IsPunctuation) ? string.Empty : " ", 
-                    sentenceStructure
-                        .IterateByPosition()
-                        .Select(it => it.Word.Fold(w => w.Annotations.IsFixed ? $"~{w.Content}~": w.Content, () => $"'{it.Content}'")));
+        public static string BuildDisambiguatingAnnotations(
+            IReadOnlyCollection<LemmaVersion> lemmaVersions,
+            IRussianLexicon russianLexicon) =>
+            string.Join(
+                ", ", 
+                LemmaVersionDisambiguator.Create(lemmaVersions)
+                    .ProposeDisambiguations(russianLexicon));
 
-            string BuildDisambiguatingAnnotations(IReadOnlyCollection<LemmaVersion> lemmaVersions) =>
-                string.Join(
-                    ", ", 
-                    LemmaVersionDisambiguator.Create(lemmaVersions)
-                        .ProposeDisambiguations(russianLexicon));
-        }
+        private static string Normalize(WordOrQuotation<AnnotatedWord> sentenceStructure) =>
+            TextManipulation.Join(
+                (_, it) => it.All(char.IsPunctuation) ? string.Empty : " ", 
+                sentenceStructure
+                    .IterateByPosition()
+                    .Select(it => it.Word.Fold(w => w.Annotations.IsFixed ? $"~{w.Content}~": w.Content, () => $"'{it.Content}'")));
     }
 
     internal sealed record WordAnnotations(
@@ -214,6 +237,15 @@ namespace Ginger.Runner
                 ExpectedCoordinates.Where(c => c.Type != typeof(Number) && c.Type != typeof(Gender)).AsImmutable(),
                 RelevantGrammarCharacteristicsPropertyGetters);
 
+        public MayBe<LemmaVersion> TryProduceLemmaVersion(
+            IEnumerable<LemmaVersion> lemmaVersions, 
+            IRussianLexicon russianLexicon) 
+        =>
+            lemmaVersions.TryFirst(lv => 
+            {
+                russianLexicon.GenerateWordForms(lv.EntryId, russianLexicon.ResolveCoordinates(ExpectedCoordinates.Select()));
+            })
+            
         public override string ToString() => $"({Definition})";
 
         public static LemmaVersionPicker Create(

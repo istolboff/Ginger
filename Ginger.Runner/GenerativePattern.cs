@@ -68,28 +68,28 @@ namespace Ginger.Runner
                                                                 .Range(1, numberOfReplicas)
                                                                 .SelectMany(i => i == 1 
                                                                             ? rules
-                                                                            : AdjustRulesMeaning(word, rules, i))
+                                                                            : AdjustRulesMeaning(word, rules, i, russianLexicon))
                                                                 .AsImmutable(),
                                                         statements => 
                                                             Enumerable
                                                                 .Range(1, numberOfReplicas)
                                                                 .SelectMany(i => i == 1 
                                                                             ? statements
-                                                                            : AdjustStatementsMeaning(word, statements, i))
+                                                                            : AdjustStatementsMeaning(word, statements, i, russianLexicon))
                                                                 .AsImmutable());
 
                                                 return new PatternWithMeaning(
-                                                            concretePattern.Disambiguate(russianLexicon), 
+                                                            concretePattern.Disambiguate(russianLexicon, enforceLemmaVersions: true), 
                                                             concretePatternMeaning);
                                             }))
                                     .OrElse(() => 
                                             new PatternWithMeaning(
                                                 pattern
-                                                    .Map(
+                                                    .Transform(
                                                         word => word.Annotations.GenerationHint.Map(_ => MakePlural(word)).OrElse(word.ToString()), 
                                                         grammarParser,
                                                         russianLexicon)
-                                                    .Disambiguate(russianLexicon),
+                                                    .Disambiguate(russianLexicon, enforceLemmaVersions: true),
                                                 meaning
                                             )
                                             .ToImmutable()));
@@ -101,7 +101,7 @@ namespace Ginger.Runner
                     AnnotatedSentence sentence,
                     int numberOfReplicas)
                 => 
-                    sentence.Map(word =>
+                    sentence.Transform(word =>
                         !word.Annotations.GenerationHint.HasValue
                             ? word.ToString()
                             : word.Annotations.GenerationHint.Value switch 
@@ -116,14 +116,14 @@ namespace Ginger.Runner
                 string ListReplicas(AnnotatedWord word, int numberOfReplicas) =>
                     numberOfReplicas switch
                         {
-                            2 => $"{word.Content} и {GetNthReplicaFor(word.DisambiguatedLemmaVersion, 2, russianLexicon)}",
+                            2 => $"{word.Content} и {GetNthReplicaFor(word.GetDisambiguatedLemmaVersion(russianLexicon, enforceLemmaVersions: true, Failure), 2, russianLexicon)}",
                             _ => word.Content + ", " + 
                                 string.Join(
                                     ", ", 
                                     Enumerable
                                         .Range(2, numberOfReplicas - 2)
-                                        .Select(i => GetNthReplicaFor(word.DisambiguatedLemmaVersion, i, russianLexicon))) + 
-                                $" и {GetNthReplicaFor(word.DisambiguatedLemmaVersion, numberOfReplicas, russianLexicon)}"
+                                        .Select(i => GetNthReplicaFor(word.GetDisambiguatedLemmaVersion(russianLexicon, enforceLemmaVersions: true, Failure), i, russianLexicon))) + 
+                                $" и {GetNthReplicaFor(word.GetDisambiguatedLemmaVersion(russianLexicon, enforceLemmaVersions: true, Failure), numberOfReplicas, russianLexicon)}"
                         };
 
                 string MakePlural(AnnotatedWord word) =>
@@ -151,23 +151,25 @@ namespace Ginger.Runner
             static IReadOnlyCollection<Rule> AdjustRulesMeaning(
                 AnnotatedWord word,
                 IReadOnlyCollection<Rule> singleElementMeaning, 
-                int nthReplication) 
+                int nthReplication,
+                IRussianLexicon russianLexicon) 
             => 
                 ReplaceWordInMeaning(
                     singleElementMeaning, 
-                    wordToBeReplaced: word.DisambiguatedLemmaVersion.Lemma, 
-                    wordToReplaceWith: GetNthReplicaFor(word.DisambiguatedLemmaVersion, nthReplication));
+                    wordToBeReplaced: word.GetDisambiguatedLemmaVersion(russianLexicon, enforceLemmaVersions: true, Failure).Lemma, 
+                    wordToReplaceWith: GetNthReplicaFor(word.GetDisambiguatedLemmaVersion(russianLexicon, enforceLemmaVersions: true, Failure), nthReplication));
 
 
             static IReadOnlyCollection<ComplexTerm> AdjustStatementsMeaning(
                 AnnotatedWord word,
                 IReadOnlyCollection<ComplexTerm> singleElementMeaning, 
-                int nthReplication)
+                int nthReplication,
+                IRussianLexicon russianLexicon)
             => 
                 ReplaceWordInMeaning(
                     singleElementMeaning, 
-                    wordToBeReplaced: word.DisambiguatedLemmaVersion.Lemma, 
-                    wordToReplaceWith: GetNthReplicaFor(word.DisambiguatedLemmaVersion, nthReplication));
+                    wordToBeReplaced: word.GetDisambiguatedLemmaVersion(russianLexicon, enforceLemmaVersions: true, Failure).Lemma, 
+                    wordToReplaceWith: GetNthReplicaFor(word.GetDisambiguatedLemmaVersion(russianLexicon, enforceLemmaVersions: true, Failure), nthReplication));
 
             private static LemmaVersion EnsureMasculine(LemmaVersion lemmaVersion, string word) =>
                 (lemmaVersion.Characteristics.TryGetGender() ?? Gender.Мужской) == Gender.Мужской

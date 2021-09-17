@@ -27,9 +27,6 @@ namespace Ginger.Tests
                                 : string.Empty;
                 File.AppendAllText(logFilePath, $"{prefix}{log}{Environment.NewLine}");
             };
-
-            GenerativePattern.PatternBuildingEvent += message => 
-                File.AppendAllText(logFilePath, $"Generative Pattern Building Event: {message}" + Environment.NewLine);
         }
     }
 }
