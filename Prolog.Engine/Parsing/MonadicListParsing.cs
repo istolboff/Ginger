@@ -23,16 +23,14 @@ namespace Prolog.Engine.Parsing
         public static Parser<ListInput<T>, T> Expect<T>(Func<T, bool> check) =>
             new Parser<ListInput<T>, T>(Read).Where(check);
 
-        public static Parser<ListInput<T>, T> OneOf<T>(T firstExpectedvalue, params T[] otherExpectedValues) => 
-            Expect((T item) => 
-                EqualityComparer<T>.Default.Equals(firstExpectedvalue, item) ||
-                otherExpectedValues.Contains(item));
+        public static Parser<ListInput<T>, T> Expect<T>(T expectedValue) =>
+            Expect((T item) => EqualityComparer<T>.Default.Equals(expectedValue, item));
 
         public static Parser<ListInput<T>, Unit> Sequence<T>(T firstElement, T secondElement, params T[] otherElements) =>
-            from unused1 in OneOf(firstElement)
+            from unused1 in Expect(firstElement)
             from unit in otherElements.Any() 
-                                ? OneOf(secondElement).Then(SequenceCore(otherElements, 0))
-                                : OneOf(secondElement).Select(_ => Unit.Instance)
+                                ? Expect(secondElement).Then(SequenceCore(otherElements, 0))
+                                : Expect(secondElement).Select(_ => Unit.Instance)
             select unit;
 
         public static Parser<ListInput<TValue>, TResult> WholeInput<TValue, TResult>(Parser<ListInput<TValue>, TResult> parser) =>
@@ -49,8 +47,8 @@ namespace Prolog.Engine.Parsing
 
         private static Parser<ListInput<T>, Unit> SequenceCore<T>(T[] elements, int currentElement) =>
             currentElement == elements.Length - 1
-                ? OneOf(elements[currentElement]).Select(_ => Unit.Instance)
-                : OneOf(elements[currentElement]).Then(SequenceCore(elements, currentElement + 1));
+                ? Expect(elements[currentElement]).Select(_ => Unit.Instance)
+                : Expect(elements[currentElement]).Then(SequenceCore(elements, currentElement + 1));
 
         private static Parser<ListInput<T>, Unit> Eof<T>() =>
             input => (input.Position == input.Items.Count) switch 

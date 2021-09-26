@@ -54,10 +54,10 @@ namespace Ginger.Runner
                             "We expected to see word at this position, but it's either quotation, or there's no element at this index at all."))
                 .Word.Value!.LemmaVersions
                 .FindRelevantLemma(lemmaVersion)
-            .OrElse(() => throw reportException(
-                            $"Could not find {lemmaVersion.PartOfSpeech} lemma version " +
-                            $"of type {lemmaVersion.Characteristics.GetType().Name} " +
-                            $"position={positionInSentence}  in sentence {Sentence}."));
+                .OrElse(() => throw reportException(
+                                $"Could not find {lemmaVersion.PartOfSpeech} lemma version " +
+                                $"of type {lemmaVersion.Characteristics.GetType().Name} " +
+                                $"at position={positionInSentence} in sentence {Sentence}."));
 
         public string GetQuotationAt(
             int positionInSentence,
@@ -177,7 +177,7 @@ namespace Ginger.Runner
                 (_, it) => it.All(char.IsPunctuation) ? string.Empty : " ", 
                 sentenceStructure
                     .IterateByPosition()
-                    .Select(it => it.Word.Fold(w => w.Annotations.IsFixed ? $"~{w.Content}~": w.Content, () => $"'{it.Content}'")));
+                    .Select(it => it.Word.Fold(w => w.Annotations.IsFixed ? $"~{w.Content}~" : w.Content, () => $"'{it.Content}'")));
     }
 
     internal sealed record WordAnnotations(

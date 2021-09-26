@@ -71,44 +71,48 @@ namespace Ginger.Runner
         private static Parser<Tokens, IReadOnlyCollection<MarkedupWord>> BuildParser()
         {
             var russianWord = Tracer.Trace(
-                        Expect((string token) => !IsPunctuation(token)), 
+                        Expect((string token) => !IsSpecialChar(token)), 
                         "russianWord");
 
-            var genereationHint = Tracer.Trace(
-                        from unused1 in OneOf("{")
-                        from hintType in Either(Sequence("и", "проч"), OneOf("мн"))
+            var generationHint = Tracer.Trace(
+                        from unused1 in Expect("{")
+                        from hintType in Either(Sequence("и", "проч"), Expect("мн"))
                         from unused2 in Sequence(".", "}")
                         select hintType.IsLeft ? GenerationHint.Replicatable : GenerationHint.PluralitySensitive,
                         "genereationHint");
 
             var singleDisambiguatingCoordinate = Tracer.Trace(
-                            from coordinateName in russianWord
-                            from unused in OneOf(".")
-                            select coordinateName,
-                            "singleDisambiguatingCoordinate");
+                        from coordinateName in russianWord
+                        from unused in Expect(".")
+                        select coordinateName,
+                        "singleDisambiguatingCoordinate");
 
             var disambiguatingCoordinates = Tracer.Trace(
-                            from unused1 in OneOf("(")
-                            from coordinates in Repeat(singleDisambiguatingCoordinate, OneOf(","), atLeastOnce: true)
-                            from unused2 in OneOf(")")
-                            select new StructuralEquatableArray<string>(coordinates) as IReadOnlyCollection<string>,
-                            "disambiguatingCoordinates");
+                        from unused1 in Expect("(")
+                        from coordinates in Repeat(singleDisambiguatingCoordinate, Expect(","), atLeastOnce: true)
+                        from unused2 in Expect(")")
+                        select new StructuralEquatableArray<string>(coordinates) as IReadOnlyCollection<string>,
+                        "disambiguatingCoordinates");
 
             var optionalAnnotations = Tracer.Trace(
                         Or<Tokens, (MayBe<GenerationHint> GenerationHint, MayBe<IReadOnlyCollection<string>> DisambiguatingCoordinates)>(
-                            from hint in genereationHint
+                            // generation hint, then disambiguator
+                            from hint in generationHint
                             from coordinates in disambiguatingCoordinates
                             select (Some(hint), Some(coordinates)),
+                            // disambiguator, then generation hint
                             from coordinates in disambiguatingCoordinates
-                            from hint in genereationHint
+                            from hint in generationHint
                             select (Some(hint), Some(coordinates)),
-                            from hint in genereationHint
+                            // just generation hint
+                            from hint in generationHint
                             select (Some(hint), MakeNone<IReadOnlyCollection<string>>()),
+                            // just disambiguator (if any)
                             from maybeCoordinates in Optional(disambiguatingCoordinates)
                             select maybeCoordinates
                                     .Map(coordinates => (MakeNone<GenerationHint>(), Some(coordinates)))
-                                    .OrElse((MakeNone<GenerationHint>(), MakeNone<IReadOnlyCollection<string>>()))
-                        ),"optionalAnnotations");
+                                    .OrElse((MakeNone<GenerationHint>(), MakeNone<IReadOnlyCollection<string>>()))),
+                        "optionalAnnotations");
 
             var markedupWord = Tracer.Trace(
                         from content in russianWord
@@ -121,9 +125,9 @@ namespace Ginger.Runner
                         "markedupWord");
 
             var fixedWordsGroup = Tracer.Trace(
-                        from unused1 in OneOf("~")
+                        from unused1 in Expect("~")
                         from words in Repeat(markedupWord, atLeastOnce: true)
-                        from unused2 in OneOf("~")
+                        from unused2 in Expect("~")
                         select words.ConvertAll(w => w with { IsFixed = true }), 
                         "fixedWordsGroup");
 
@@ -138,7 +142,7 @@ namespace Ginger.Runner
 
             return WholeInput(markedupWords);
 
-            static bool IsPunctuation(string text) => text.Length == 1 && text.Single().IsOneOf('~', '{', '}', '(', ')');
+            static bool IsSpecialChar(string text) => text.Length == 1 && text.Single().IsOneOf('~', '{', '}', '(', ')');
         }
 
         private static readonly Parser<Tokens, IReadOnlyCollection<MarkedupWord>> MarkupParser = BuildParser();
