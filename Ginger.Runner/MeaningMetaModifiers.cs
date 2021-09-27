@@ -10,12 +10,15 @@ namespace Ginger.Runner
     using static DomainApi;
     using static MayBe;
     using static PatternBuilder;
+    using static PrettyPrinting;
 
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
     
     internal static class MeaningMetaModifiers
     {
         public const string Understand = "@understand";
+
+        public const string Variable = "@variable";
 
         public static bool IsMetaModifier(FunctorBase functor) =>
                 functor.Name.StartsWith('@');
@@ -86,22 +89,39 @@ namespace Ginger.Runner
             Rule(Preprocess(rule.Conclusion), rule.Premises.Select(Preprocess));
 
         private static ComplexTerm Preprocess(ComplexTerm complexTerm) =>
-            complexTerm with { Arguments = new (complexTerm.Arguments.Select(Preprocess)) };
+            complexTerm.Functor.Name == "@call"
+                ? ComplexTerm(
+                        Functor(
+                            GetArgumentAtoms(EnsureFirstArgumentIsVariableMetaModifier(complexTerm))
+                                .BuildIdentifier(Impl.Russian.TextInfo, useCamelCase: true),
+                            complexTerm.Arguments.Count - 1),
+                        complexTerm.Arguments.Skip(1).Select(Preprocess).AsImmutable())
+                : complexTerm with { Arguments = new (complexTerm.Arguments.Select(Preprocess)) };
 
         private static Term Preprocess(Term term) => 
             term switch 
             {
-                ComplexTerm ct when ct.Functor.Name == "@variable" =>
-                    Variable(
-                        string.Join(
-                            string.Empty, 
-                            ct.Arguments
-                                .Cast<Atom>(_ => 
-                                    new InvalidOperationException($"Invalid use of {ct.Functor.Name} meta-modifier in {ct}. " + 
-                                    "It can only accepts atoms as its arguments."))
-                                .Select(a => Impl.Russian.TextInfo.ToTitleCase(a.Characters)))),
+                ComplexTerm ct when ct.Functor.Name == Variable =>
+                    Variable(GetArgumentAtoms(ct).BuildIdentifier(Impl.Russian.TextInfo)),
                 _ => term
             };
+
+        private static IEnumerable<string> GetArgumentAtoms(ComplexTerm ct) => 
+            ct.Arguments
+                .Cast<Atom>(_ => 
+                    new InvalidOperationException(
+                        $"Invalid use of {ct.Functor.Name} meta-modifier in {Print(ct)}. " +
+                        "It can only accepts atoms as its arguments."))
+                .Select(a => a.Characters);
+
+        private static ComplexTerm EnsureFirstArgumentIsVariableMetaModifier(ComplexTerm ct) =>
+            ct.Arguments.Count > 0 && 
+            ct.Arguments[0] is ComplexTerm firstArgument &&
+            firstArgument.Functor.Name == Variable
+                ? firstArgument
+                : throw new InvalidOperationException(
+                    $"Invalid use of {ct.Functor.Name} meta-modifier in {Print(ct)}. " + 
+                    "Its first argument should be a @variable(...) complex term.");
                 
         private static readonly string InlinerFunctorName = "I" + Guid.NewGuid().ToString("N");
    }

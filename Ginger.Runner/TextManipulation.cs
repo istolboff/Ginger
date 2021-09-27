@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Text;
 using Prolog.Engine.Miscellaneous;
 
@@ -24,5 +26,13 @@ namespace Ginger.Runner
 
             return result.ToString();
         }
+
+        public static string BuildIdentifier(
+            this IEnumerable<string> @this, 
+            TextInfo textInfo, 
+            bool useCamelCase = false) =>
+            string.Join(
+                string.Empty,
+                @this.Select((s, i) => useCamelCase && i == 0 ? s : textInfo.ToTitleCase(s)));
     }
 }

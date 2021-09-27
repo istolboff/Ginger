@@ -109,7 +109,12 @@ namespace Ginger.Runner
                                                 meaning
                                             )
                                             .ToImmutable()))
-                        .Select(JoinMultipleRulesIntoSingleRuleIfConclusionIsTheSameForAllRules);
+                        .Select(patternWithMeaning => patternWithMeaning with 
+                                {
+                                    Meaning = patternWithMeaning.Meaning.Map2(
+                                        JoinMultipleRulesIntoSingleRuleIfConclusionIsTheSameForAllRules,
+                                        RemoveDuplicatedComplexTerms)
+                                });
 
                 PatternWithMeaning PlainPattern() =>
                     new (pattern.Disambiguate(russianLexicon), meaning);
@@ -161,23 +166,32 @@ namespace Ginger.Runner
                                         }
                     }).ToString();
 
-                static PatternWithMeaning JoinMultipleRulesIntoSingleRuleIfConclusionIsTheSameForAllRules(
-                    PatternWithMeaning patternWithMeaning) 
+                static IReadOnlyCollection<Rule> JoinMultipleRulesIntoSingleRuleIfConclusionIsTheSameForAllRules(
+                    IReadOnlyCollection<Rule> rules) 
                 =>
-                    patternWithMeaning with 
-                    { 
-                        Meaning = patternWithMeaning.Meaning.MapLeft(
-                            rules => rules.Count > 1 && rules.Select(r => r.Conclusion).Distinct().Count() == 1
-                                ? new[] 
-                                    { 
-                                        Rule(
-                                            rules.First().Conclusion, 
-                                            from premisIndex in Enumerable.Range(0, rules.First().Premises.Count)
-                                            from differentPremisesAtIndex in rules.Select(r => r.Premises.ElementAt(premisIndex)).Distinct()
-                                            select differentPremisesAtIndex)
-                                    }
-                                : rules)
-                    };
+                    rules.Count > 1 && rules.Select(r => r.Conclusion).Distinct().Count() == 1
+                        ? new[] 
+                            { 
+                                Rule(
+                                    rules.First().Conclusion, 
+                                    from premisIndex in Enumerable.Range(0, rules.First().Premises.Count)
+                                    from differentPremisesAtIndex in rules.Select(r => r.Premises.ElementAt(premisIndex)).Distinct()
+                                    select differentPremisesAtIndex)
+                            }
+                        : rules;
+
+                static IReadOnlyCollection<ComplexTerm> RemoveDuplicatedComplexTerms(
+                    IReadOnlyCollection<ComplexTerm> statements) 
+                => // remove duplicated complex terms, and put repeated ones the righter the more frequent they are
+                    statements
+                        .Select((statement, index) => new { statement, index })
+                        .GroupBy(it => it.statement)
+                        .Select(g => new { g.Key, Count = g.Count(), FirstIndex = g.Min(it => it.index) })
+                        .GroupBy(it => it.Count)
+                        .OrderBy(it => it.Key)
+                        .Select(g => new { g.Key, items = g.OrderBy(it => it.FirstIndex) })
+                        .SelectMany(it => it.items.Select(it1 => it1.Key))
+                        .AsImmutable();
             }
 
             private static bool IsReplicatable(AnnotatedSentence sentence) =>

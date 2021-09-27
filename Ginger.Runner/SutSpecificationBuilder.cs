@@ -158,9 +158,12 @@ namespace Ginger.Runner
             }
         }
 
-        public void DefineBoundaryCondition(string phrasing)
+        public void DefineInitialState(string phrasing)
         {
-            throw new NotImplementedException();
+            _initialStates.AddRange(
+                Understand(phrasing).Fold(
+                    rules => rules.Select(InitialState.DeconstructRule),
+                    stateComponents => new InitialState(stateComponents).ToImmutable()));
         }
 
         public SutSpecification BuildDescription() =>
@@ -168,7 +171,7 @@ namespace Ginger.Runner
                 _entityDefinitions,
                 _effects,
                 _businessRules,
-                new ());
+                _initialStates);
 
         private SentenceMeaning Understand(string phrasing) =>
             _sentenceUnderstander
@@ -188,5 +191,6 @@ namespace Ginger.Runner
         private readonly List<ComplexTerm> _entityDefinitions = new ();
         private readonly List<Rule> _effects = new ();
         private readonly List<BusinessRule> _businessRules = new ();
+        private readonly List<InitialState> _initialStates = new ();
     }
 }
