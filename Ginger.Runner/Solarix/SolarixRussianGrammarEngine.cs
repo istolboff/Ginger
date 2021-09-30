@@ -311,9 +311,9 @@ namespace Ginger.Runner.Solarix
 
             return new SentenceElement(
                 Content: content,
-                LeafLinkType: leafType == null || leafType.Value < 0 ? (LinkType?)null : (LinkType)leafType.Value,
+                LeafLinkType: leafType == null || leafType.Value < 0 ? null : (LinkType)leafType.Value,
                 LemmaVersions: lemmaVersions.Distinct().AsImmutable(), 
-                Children: children.ToList(),
+                Children: children.AsImmutable(),
                 PositionInSentence: position);
         }
 
@@ -444,7 +444,7 @@ namespace Ginger.Runner.Solarix
         {
             var coordinateId = CoordinateStateTypeToCoordinateIdMap[typeof(TState)];
             var coordinateState = GrammarEngine.sol_GetNodeVerCoordState(hNode, versionIndex, coordinateId);
-            return (coordinateState < 0) ? (TState?)null : (TState)(object)coordinateState;
+            return (coordinateState < 0) ? null : (TState)(object)coordinateState;
         }
 
         private static TState GetBoolCoordinateState<TState>(IntPtr hNode, int versionIndex, int coordinateId, TState trueValue, TState falseValue)

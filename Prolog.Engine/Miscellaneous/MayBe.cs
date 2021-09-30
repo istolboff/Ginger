@@ -29,6 +29,9 @@ namespace Prolog.Engine.Miscellaneous
 			sequence.Any(it => !it.HasValue)
 				? None
 				: Some(sequence.ConvertAll(it => it.Value!));
+
+        public static T? AsNullable<T>(this MayBe<T> @this) where T : struct =>
+            @this.HasValue ? @this.Value : null;
     }
 
     internal sealed record MayBe<T>(T? Value, bool HasValue)

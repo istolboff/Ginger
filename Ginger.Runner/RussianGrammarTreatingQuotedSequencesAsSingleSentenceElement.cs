@@ -18,7 +18,7 @@ namespace Ginger.Runner
             var quotedSequences = LocateQuotedSequences(sentence);
             var quotationSubstitutions = MakeSubstitutionsOfQuotedSequencesWithSingleWords(quotedSequences);
             var textWithSubstitutedQuotes = ApplySubstitutions(quotationSubstitutions, sentence);
-            var parsedText = @this.Parse(textWithSubstitutedQuotes);
+            var parsedText = WorkaroundForSituationsWhenParserRetunsFlatChainOfElements(@this, textWithSubstitutedQuotes);
             var sentenceStructure = RestoreQuotations(quotationSubstitutions, parsedText).Single(
                                 _ => true, 
                                 _ => new InvalidOperationException(
@@ -36,7 +36,7 @@ namespace Ginger.Runner
             var textWithSubstitutedQuotes = ApplySubstitutions(quotationSubstitutions, annotatedText);
             var markedupWords = @this.ParseMarkup(textWithSubstitutedQuotes).ToArray();
             var sentenceWithoutMarkup = string.Join(" ", markedupWords.Select(w => w.Content));
-            var parsedText = @this.Parse(sentenceWithoutMarkup);
+            var parsedText = WorkaroundForSituationsWhenParserRetunsFlatChainOfElements(@this, sentenceWithoutMarkup);
             var sentenceStructure = RestoreQuotations(quotationSubstitutions, parsedText).Single(
                                 _ => true, 
                                 _ => new InvalidOperationException(
@@ -87,7 +87,6 @@ namespace Ginger.Runner
             }
         }
 
-
         private static IEnumerable<string> LocateQuotedSequences(string text) =>
             QuotationRecognizer.Matches(text).Select(m => m.Groups[1].Value).AsImmutable();
 
@@ -137,6 +136,16 @@ namespace Ginger.Runner
                                 children, 
                                 sentenceElement.PositionInSentence))
             ).ToList();
+
+        private static IReadOnlyCollection<SentenceElement> WorkaroundForSituationsWhenParserRetunsFlatChainOfElements(
+            IRussianGrammarParser parser, 
+            string text)
+        => parser.Parse(text) switch 
+            {
+                var elements when elements.HasMoreThanOneElement() && elements.All(e => !e.Children.Any()) => 
+                    (elements.First() with { Children = elements.Skip(1).AsImmutable() }).ToImmutable(),
+                var elements => elements
+            };
 
         private static readonly Regex QuotationRecognizer = new (@"'([^']+)'", RegexOptions.Compiled);
 

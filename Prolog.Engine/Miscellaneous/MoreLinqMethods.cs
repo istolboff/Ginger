@@ -179,6 +179,13 @@ namespace Prolog.Engine.Miscellaneous
             }
         }
 
+        public static IReadOnlyCollection<IReadOnlyCollection<TResult>> Split<T, TResult>(
+            this IReadOnlyCollection<T> @this, 
+            Func<T, bool> isSplitter, 
+            Func<T, TResult> project) 
+        =>
+            Split(@this, isSplitter).Select(segment => segment.Select(project).AsImmutable()).AsImmutable();
+
         public static IEnumerable<T> Cast<T>(
             this IEnumerable @this, 
             Func<object, Exception> makeInvalidTypeException)

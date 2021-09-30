@@ -73,7 +73,7 @@ namespace Ginger.Runner
                 }
 
                 concreteUnderstanders.AddRange(concretePatterns
-                    .Select(concretePattern => PatternBuilder.BuildPattern(
+                    .SelectMany(concretePattern => PatternBuilder.BuildUnderstanders(
                                     concretePattern.PatternId,
                                     concretePattern.PatternWithMeaning,
                                     grammarParser,

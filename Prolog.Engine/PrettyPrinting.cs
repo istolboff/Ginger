@@ -19,6 +19,7 @@ namespace Prolog.Engine
                 Variable variable => variable.Name,
                 ComplexTerm cutOrFail when cutOrFail == Builtin.Cut || cutOrFail == Builtin.Fail => cutOrFail.Functor.Name,
                 ComplexTerm list when list.IsList() => "[" + string.Join(", ", IterableList(list, strictMode: false).Select(t => Print(t))) + "]",
+                ComplexTerm binaryOperation when Builtin.BinaryOperators.ContainsKey(binaryOperation.Functor.Name) => $"{Print(binaryOperation.Arguments[0])} {binaryOperation.Functor.Name} {Print(binaryOperation.Arguments[^1])}",
                 ComplexTerm complexTerm => $"{complexTerm.Functor.Name}({string.Join(',', complexTerm.Arguments.Select(a => Print(a, enumSeparator)))})",
                 Rule fact when !fact.Premises.Any() => $"{Print(fact.Conclusion)}.",
                 Rule rule => $"{Print(rule.Conclusion, enumSeparator)}:-{string.Join(',', rule.Premises.Select(p => Print(p, enumSeparator)))}",

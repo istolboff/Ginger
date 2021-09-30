@@ -363,7 +363,7 @@ namespace Ginger.Runner.Solarix
 
     internal sealed record LemmaVersion(string Lemma, int EntryId, PartOfSpeech? PartOfSpeech, GrammarCharacteristics Characteristics);
 
-    internal sealed record SentenceElement(string Content, IReadOnlyCollection<LemmaVersion> LemmaVersions, IReadOnlyList<SentenceElement> Children, LinkType? LeafLinkType, int PositionInSentence);
+    internal sealed record SentenceElement(string Content, IReadOnlyCollection<LemmaVersion> LemmaVersions, IReadOnlyCollection<SentenceElement> Children, LinkType? LeafLinkType, int PositionInSentence);
 // ReSharper restore UnusedMember.Global
 // ReSharper restore InconsistentNaming
 }

@@ -71,6 +71,46 @@ namespace Ginger.Runner
                             $"{Sentence} does not have a quotation at position={positionInSentence}. " + 
                             "We expected to see quotation at this position, but it's either word, or there's no element at this index at all."))
                 .Content;
+
+        public ParsedSentence IntroduceQuotes(
+            IReadOnlyCollection<Range> unquotedWordsRanges,
+            IRussianGrammarParser grammarParser)
+        {
+            ProgramLogic.Check(
+                unquotedWordsRanges.Any(), 
+                "Trying to introduce quotes when there is no unquoted ranges is meaningless.");
+            var elements = SentenceStructure.IterateByPosition().AsImmutable();
+            var sentenceStartsWithQuotation = !unquotedWordsRanges.First().Start.Equals(Index.Start);
+            var sentenceEndsWithQuotation = !unquotedWordsRanges.Last().End.Equals(Index.FromStart(elements.Count));
+            var adjustedSentenceText = elements.Aggregate(
+                    (StringBuilder: new StringBuilder(), Index: 0),
+                    (accumulator, wordOrQuotation) => 
+                    {
+                        var (sb, index) = accumulator;
+                        if (index == 0 && sentenceStartsWithQuotation ||
+                            unquotedWordsRanges.Any(r => r.End.Value == index))
+                        {
+                            sb.Append('\'');
+                        }
+
+                        sb.Append(wordOrQuotation.Content);
+                       
+                        if (index == elements.Count - 1 && sentenceEndsWithQuotation ||
+                            unquotedWordsRanges.Any(r => r.Start.Value == index + 1))
+                        {
+                            sb.Append('\'');
+                        }
+
+                        if (index < elements.Count - 1)
+                        {
+                            sb.Append(' ');
+                        }
+
+                        return (sb, index + 1);
+                    })
+                .StringBuilder.ToString();
+            return grammarParser.ParsePreservingQuotes(adjustedSentenceText);
+        }
     }
 
     internal sealed record AnnotatedWord(

@@ -18,8 +18,6 @@ namespace Ginger.Runner
     {
         public const string Understand = "@understand";
 
-        public const string Variable = "@variable";
-
         public static bool IsMetaModifier(FunctorBase functor) =>
                 functor.Name.StartsWith('@');
 
@@ -124,5 +122,6 @@ namespace Ginger.Runner
                     "Its first argument should be a @variable(...) complex term.");
                 
         private static readonly string InlinerFunctorName = "I" + Guid.NewGuid().ToString("N");
+        private const string Variable = "@variable";
    }
 }

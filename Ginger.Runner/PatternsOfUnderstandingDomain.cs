@@ -23,7 +23,7 @@ namespace Ginger.Runner
 
     internal static class PatternBuilder
     {
-        public static ConcreteUnderstander BuildPattern(
+        public static IEnumerable<ConcreteUnderstander> BuildUnderstanders(
             string patternId, 
             PatternWithMeaning patternWithMeaning,
             IRussianGrammarParser grammarParser,
@@ -32,7 +32,13 @@ namespace Ginger.Runner
         {
             var (pattern, meaning) = patternWithMeaning;
 
-            var patternElements = pattern.SentenceStructure.IterateByPosition().ToArray();
+            var allWordsUsedInMeaning = new HashSet<string>(
+                meaning.Fold(
+                    rules => rules.SelectMany(ListUsedWords), 
+                    statements => statements.SelectMany(ListUsedWords)),
+                RussianIgnoreCase);
+
+            var patternElements = pattern.SentenceStructure.IterateByPosition().AsImmutable();
 
             var pathesToWords = new PathesToWords(
                 patternElements
@@ -43,39 +49,89 @@ namespace Ginger.Runner
                         RussianIgnoreCase),
                 pattern.Sentence);
 
-            var allWordsUsedInMeaning = new HashSet<string>(
-                meaning.Fold(
-                    rules => rules.SelectMany(ListUsedWords), 
-                    statements => statements.SelectMany(ListUsedWords)),
-                RussianIgnoreCase);
+            var sentenceElementsCheckers = patternElements.ConvertAll(it => 
+                        it.Word.Map(
+                            word => new WordChecker(
+                                    word.LemmaVersion, 
+                                    ExpectParticularWord: word.IsFixed || 
+                                                            !allWordsUsedInMeaning.Contains(word.LemmaVersion.Lemma))));
 
-            var sentenceStructureChecker = BuildSentenceStructureChecker(
-                patternId,
-                patternElements,
-                allWordsUsedInMeaning,
-                russianLexicon);
-            
-            return meaning.Fold(
-                rules => 
+            var regularUnderstander = BuildRegularUnderstander();
+            yield return regularUnderstander;
+
+            var patternAllowsDroppingQuotes = 
+                    patternElements.Any() && 
+                    patternElements.All(element => element.Word.Map(w => w.IsFixed).OrElse(true));
+
+            if (patternAllowsDroppingQuotes)
+            {
+                var sequencesOfExactWords = sentenceElementsCheckers.Split(
+                    wordChecker => !wordChecker.HasValue, wordChecker => wordChecker.Value!);
+                if (sequencesOfExactWords.Any())
                 {
-                    var ruleBuilders = rules
-                        .ConvertAll(rule => 
-                            MakeRuleBuilder(pattern, rule, pathesToWords, grammarParser, sentenceUnderstander));
-                    return BuildPatternCore(sentence => 
-                        Sequence(ruleBuilders.ConvertAll(rb => rb(sentence)))
-                            .Map(Left<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>));
-                },
-                statements =>
-                {
-                    var statementBuilders = statements
-                        .ConvertAll(statement => 
-                            MakeComplexTermBuilder(pattern, statement, pathesToWords, grammarParser, sentenceUnderstander));
-                    return BuildPatternCore(sentence => 
-                        Sequence(statementBuilders.ConvertAll(sb => sb(sentence)))
-                            .Map(Right<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>));
-                });
+                    yield return BuildDroppingQuotesUnderstander(sequencesOfExactWords, regularUnderstander);
+                }
+            }
+
+            ConcreteUnderstander BuildRegularUnderstander()
+            {
+                var sentenceStructureChecker = BuildRegularSentenceStructureChecker(
+                    patternId,
+                    patternElements,
+                    allWordsUsedInMeaning,
+                    sentenceElementsCheckers,
+                    russianLexicon);
+                
+                return meaning.Fold(
+                    rules => 
+                    {
+                        var ruleBuilders = rules
+                            .ConvertAll(rule => 
+                                MakeRuleBuilder(pattern, rule, pathesToWords, grammarParser, sentenceUnderstander));
+                        return BuildPatternCore(
+                            sentenceStructureChecker,
+                            sentence => 
+                                Sequence(ruleBuilders.ConvertAll(rb => rb(sentence)))
+                                    .Map(Left<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>));
+                    },
+                    statements =>
+                    {
+                        var statementBuilders = statements
+                            .ConvertAll(statement => 
+                                MakeComplexTermBuilder(pattern, statement, pathesToWords, grammarParser, sentenceUnderstander));
+                        return BuildPatternCore(
+                            sentenceStructureChecker,
+                            sentence => 
+                                Sequence(statementBuilders.ConvertAll(sb => sb(sentence)))
+                                    .Map(Right<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>));
+                    });
+            }
+
+            ConcreteUnderstander BuildDroppingQuotesUnderstander(
+                IReadOnlyCollection<IReadOnlyCollection<WordChecker>> sequencesOfExactWords, 
+                ConcreteUnderstander quotedPhraseUnderstander)
+            {
+                var sentenceStructureChecker = BuildSentenceStructureCheckerDroppingQuotes(
+                    patternId,
+                    patternElements, 
+                    sequencesOfExactWords, 
+                    russianLexicon);
+
+                return sentence =>
+                    sentenceStructureChecker(sentence).Map(unquotedWordsRanges =>
+                        quotedPhraseUnderstander(sentence.IntroduceQuotes(unquotedWordsRanges, grammarParser))
+                        .Map(result => 
+                            (
+                             result.UnderstoodSentence with 
+                                { 
+                                    PatternId = result.UnderstoodSentence.PatternId + DroppedQuotes 
+                                },
+                             result.UnderstandingConfidenceLevel
+                            )));
+            }
 
             ConcreteUnderstander BuildPatternCore(
+                Func<ParsedSentence, int?> sentenceStructureChecker,
                 Func<ParsedSentence, MayBe<SentenceMeaning>> buildMeaning) 
             {
                 PatternEstablished?.Invoke(patternId, pattern, meaning);
@@ -83,9 +139,9 @@ namespace Ginger.Runner
                     sentenceStructureChecker(sentence) switch
                     {
                         var sentenceStructureMatchingLevel when sentenceStructureMatchingLevel is not null => 
-                            buildMeaning(sentence).Map(meaning1 => 
+                            buildMeaning(sentence).Map(actualMeaning => 
                                 (
-                                    new UnderstoodSentence(sentence, patternId, meaning1), 
+                                    new UnderstoodSentence(sentence, patternId, actualMeaning), 
                                     sentenceStructureMatchingLevel.Value
                                 )),
                         _ => None
@@ -117,14 +173,15 @@ namespace Ginger.Runner
                 }));
 
         private static Func<ParsedSentence, int?>
-            BuildSentenceStructureChecker(
+            BuildRegularSentenceStructureChecker(
                 string patternId, 
                 IReadOnlyCollection<WordOrQuotation<DisambiguatedWord>> patternElements,
                 IReadOnlySet<string> allWordsUsedInMeaning,
+                IReadOnlyCollection<MayBe<WordChecker>> sentenceElementsCheckers,
                 IRussianLexicon russianLexicon)
         {
             var sentenceStructureChecker = 
-                BuildSentenceStructureCheckerCore(patternElements, allWordsUsedInMeaning, russianLexicon);
+                BuildSentenceStructureCheckerCore(patternElements, allWordsUsedInMeaning, sentenceElementsCheckers, russianLexicon);
             return parsedSentence => 
                     {
                         LogCheckingT(Unit.Instance, $"+++Pattern {patternId} will be checked against '{parsedSentence.Sentence}'");
@@ -138,17 +195,10 @@ namespace Ginger.Runner
             BuildSentenceStructureCheckerCore(
                 IReadOnlyCollection<WordOrQuotation<DisambiguatedWord>> patternElements,
                 IReadOnlySet<string> allWordsUsedInMeaning, 
+                IReadOnlyCollection<MayBe<WordChecker>> sentenceElementsCheckers,
                 IRussianLexicon russianLexicon)
         {
-            var sentenceElementsCheckers = patternElements.ConvertAll(it => 
-                        it.Word.Map(
-                            word => Some(
-                                new WordChecker(
-                                    word.LemmaVersion, 
-                                    ExpectParticularWord: word.IsFixed || 
-                                                            !allWordsUsedInMeaning.Contains(word.LemmaVersion.Lemma)))));
-
-            var repeatedWordsUsedInMeaning = patternElements
+            var wordsUsedInMeaningTwiceOrMore = patternElements
                     .Where(it => it.Word.HasValue && allWordsUsedInMeaning.Contains(it.Word.Value!.LemmaVersion.Lemma))
                     .GroupBy(it => it.Word.Value!.LemmaVersion.Lemma, Impl.RussianIgnoreCase)
                     .Where(g => g.HasMoreThanOneElement())
@@ -158,6 +208,7 @@ namespace Ginger.Runner
             return parsedSentence => 
             {
                 var elements = parsedSentence.SentenceStructure.IterateByPosition().ToArray();
+
                 if (!LogChecking(elements.Length == sentenceElementsCheckers.Count, "number of elements"))
                 {
                     return null;
@@ -172,7 +223,7 @@ namespace Ginger.Runner
                                     sentenceStructureMatchingLevel => sentenceStructureMatchingLevel != null);
 
                 return result != null && 
-                        repeatedWordsUsedInMeaning.All(g => 
+                        wordsUsedInMeaningTwiceOrMore.All(g => 
                                 LogChecking(
                                     g.All(positionInSentence => !elements[positionInSentence].IsQuote),
                                     "1. checked sentence should contain words at all indexes") &&
@@ -190,17 +241,61 @@ namespace Ginger.Runner
                         : null;
             };
 
-            static int? Check(
-                MayBe<WordChecker> wordChecker, 
-                WordOrQuotation<Word> actualWord, 
-                IRussianLexicon russianLexicon) 
-            =>
-                wordChecker
-                    .Map(checker => actualWord.Word.Fold(word => checker.Check(word, actualWord.Content, russianLexicon), () => null))
-                    .OrElse(() => LogChecking(actualWord.IsQuote, "expected quotation") ? 0 : null);
-
             static IEnumerable<string> ListWordLemmas(Word word) =>
                 word.LemmaVersions.Select(lv => lv.Lemma);
+        }
+
+        private static Func<ParsedSentence, MayBe<List<Range>>> BuildSentenceStructureCheckerDroppingQuotes(
+            string patternId,
+            IReadOnlyCollection<WordOrQuotation<DisambiguatedWord>> patternElements,
+            IReadOnlyCollection<IReadOnlyCollection<WordChecker>> sequencesOfExactWords,
+            IRussianLexicon russianLexicon)
+        {
+            return parsedSentence => 
+            {
+                LogCheckingT(Unit.Instance, $"+++Pattern {patternId}{DroppedQuotes} will be checked against '{parsedSentence.Sentence}'");
+
+                var elements = parsedSentence.SentenceStructure.IterateByPosition().ToArray();
+                var startsWithExactWords = !patternElements.First().IsQuote;
+                var endsWithExactWords = !patternElements.Last().IsQuote;
+
+                var matchedSequences = new List<Range>();
+                var i = Index.FromStart(0);
+                foreach (var sequenceOfExactWords in sequencesOfExactWords)
+                {
+                    var matchingSequenceRange = TryFindMatchingSequence(elements, sequenceOfExactWords, i);
+                    if (matchingSequenceRange == null)
+                    {
+                        break;
+                    }
+
+                    i = Index.FromStart(matchingSequenceRange.Value.End.Value + 1);
+                    matchedSequences.Add(matchingSequenceRange.Value);
+                }
+
+                var result = 
+                        LogChecking(
+                            matchedSequences.Count == sequencesOfExactWords.Count,
+                            $"finding macthes for all {sequencesOfExactWords.Count} sequences of exact words") &&
+                        LogChecking(
+                           !startsWithExactWords || matchedSequences.First().Start.Equals(Index.Start),
+                           "checking the first match's location") &&
+                        LogChecking(
+                           !endsWithExactWords || matchedSequences.Last().End.Equals(new Index(elements.Length)),
+                           "checking the last match's location")
+                        ? Some(matchedSequences)
+                        : None;
+                LogCheckingT(Unit.Instance, $"---Applying pattern {patternId}{DroppedQuotes} to '{parsedSentence.Sentence}' {(result.HasValue ? "suceeded" : "failed")}");
+                return result;
+            };
+
+            Range? TryFindMatchingSequence(WordOrQuotation<Word>[] elements, IReadOnlyCollection<WordChecker> sequenceOfExactWords, Index start) =>
+                Enumerable
+                    .Range(start.Value, elements.Length - start.Value - sequenceOfExactWords.Count + 1)
+                    .TryFirst(i => Enumerable.Range(0, sequenceOfExactWords.Count).All(
+                        j => Check(Some(sequenceOfExactWords.ElementAt(j)), elements[i + j], russianLexicon) == 0))
+                    .Map(i => new Range(Index.FromStart(i), Index.FromStart(i + sequenceOfExactWords.Count)))
+                    .AsNullable();
         }
 
         private sealed record WordChecker(LemmaVersion LemmaVersion, bool ExpectParticularWord)
@@ -232,6 +327,15 @@ namespace Ginger.Runner
                                         Impl.RussianIgnoreCase.Equals(wordForm, wordContent),
                                         $"whether word {wordContent} can be treated as {lv.Lemma} in form {LemmaVersion.Characteristics}"));
         }
+
+        private static int? Check(
+            MayBe<WordChecker> wordChecker, 
+            WordOrQuotation<Word> actualWord, 
+            IRussianLexicon russianLexicon) 
+        =>
+            wordChecker
+                .Map(checker => actualWord.Word.Fold(word => checker.Check(word, actualWord.Content, russianLexicon), () => null))
+                .OrElse(() => LogChecking(actualWord.IsQuote, "expected quotation") ? 0 : null);
 
         private static Func<ParsedSentence, MayBe<Rule>> MakeRuleBuilder(
             DisambiguatedSentence pattern,
@@ -399,5 +503,8 @@ namespace Ginger.Runner
             private static bool IsIntroducedVariable(string word) =>
                 TryParseTerm(word).OrElse(() => Atom("a")) is Variable;
         }
+
+        private const string DroppedQuotes = "-DroppedQuotes";
+
    }
 }
