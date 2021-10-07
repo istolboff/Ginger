@@ -39,7 +39,7 @@ namespace Prolog.Engine.Parsing
             .Fold(error => throw error, result => result);
 
         private static Either<Exception, T> TryParseCore<T>(Parser<TextInput, T> parser, string input, string errorMessage) =>
-            WholeInput(parser)(new TextInput(input, 0))
+            WholeInput(parser)(new TextInput(input))
              .Fold(
                 parsingError => Left<Exception, T>(ParsingError($"{errorMessage} [{input}] {parsingError.Text} at {parsingError.Location.Position}")),
                 result => Right<Exception, T>(result.Value));

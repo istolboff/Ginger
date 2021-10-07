@@ -8,7 +8,9 @@ namespace Prolog.Engine.Parsing
     using static Either;
     using static MonadicParsing;
 
-    internal sealed record ListInput<T>(IReadOnlyList<T> Items, int Position)
+#pragma warning disable CA1801 // Review unused parameters
+    internal sealed record ListInput<T>(IReadOnlyList<T> Items, int Position = 0)
+#pragma warning restore CA1801
     {
         public override string ToString() => 
             string.Join(

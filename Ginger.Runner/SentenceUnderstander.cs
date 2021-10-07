@@ -109,7 +109,7 @@ namespace Ginger.Runner
                             .GetExecutingAssembly()
                             .GetManifestResourceStream(name);
             using var reader = new StreamReader(SuppressCa1062(stream));
-            return new (reader.ReadToEnd(), 0);
+            return new (reader.ReadToEnd());
         }
 
         private static IEnumerable<GenerativePattern> ParsePatterns(TextInput rulesText)

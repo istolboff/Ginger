@@ -11,7 +11,9 @@ namespace Prolog.Engine.Parsing
     using static Either;
     using static MonadicParsing;
     
-    internal sealed record TextInput(string Text, int Position)
+#pragma warning disable CA1801 // Review unused parameters
+    internal sealed record TextInput(string Text, int Position = 0)
+#pragma warning restore CA1801
     {
         public TextInput Skip(int n) => this with { Position = this.Position + n };
 

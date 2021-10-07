@@ -32,7 +32,7 @@ namespace Ginger.Runner
             string markedupText)
         {
             var parsedText = ExtractTildasToSeparateTokens(@this.Tokenize(markedupText)).ToArray();
-            return MarkupParser(new Tokens(parsedText, 0))
+            return MarkupParser(new Tokens(parsedText))
                         .Fold(
                             error => throw new InvalidOperationException(
                                             $"Error parsing markup text: {error.Text} at {error.Location}"), 

@@ -1,9 +1,8 @@
 using BoDi;
-using Ginger.Runner;
-using Ginger.Runner.Solarix;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Prolog.Tests;
 using TechTalk.SpecFlow;
+using Prolog.Tests;
+using Ginger.Runner.Solarix;
 
 namespace Ginger.Tests.StepDefinitions
 {
@@ -23,7 +22,6 @@ namespace Ginger.Tests.StepDefinitions
             var russianGrammarEngine = new SolarixRussianGrammarEngine();
             _russianGrammarParser = new SolarixParserMemoizer(russianGrammarEngine);
             _russianLexicon = russianGrammarEngine;
-            _sentenceUnderstander = SentenceUnderstander.LoadFromEmbeddedResources(_russianGrammarParser, _russianLexicon);
             PrologLogging.Setup(testContext);
             PatternRecognitionLogging.Setup(testContext);
         }
@@ -39,13 +37,11 @@ namespace Ginger.Tests.StepDefinitions
         {
             _diContainer.RegisterInstanceAs(_russianGrammarParser);
             _diContainer.RegisterInstanceAs(_russianLexicon);
-            _diContainer.RegisterInstanceAs(_sentenceUnderstander);
         }
 
         private readonly IObjectContainer _diContainer;
 
         private static IRussianGrammarParser? _russianGrammarParser;
         private static IRussianLexicon? _russianLexicon;
-        private static SentenceUnderstander? _sentenceUnderstander; 
    }
 }

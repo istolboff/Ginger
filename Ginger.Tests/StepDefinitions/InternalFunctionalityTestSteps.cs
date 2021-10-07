@@ -190,7 +190,7 @@ namespace Ginger.Tests.StepDefinitions
                             stateCheckers),
                     "expectedLemmaVersion");
 
-                return expectedLemmaVersion(new TextInput(grammarCharacteristics, 0)).Right!.Value;
+                return expectedLemmaVersion(new TextInput(grammarCharacteristics)).Right!.Value;
             }
 
             private static Type FindSolarixType(string typeName) => 
