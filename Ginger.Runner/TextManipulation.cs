@@ -13,6 +13,24 @@ namespace Ginger.Runner
 
     internal static class TextManipulation
     {
+        public static IEnumerable<string> SplitAtUpperCharacters(this string text)
+        {
+            var currentWordStart = 0;
+            for (var i = 1; i < text.Length; ++i)
+            {
+                if (char.IsUpper(text[i]))
+                {
+                    yield return text.Substring(currentWordStart, i - currentWordStart);
+                    currentWordStart = i;
+                }
+            }
+
+            if (currentWordStart < text.Length)
+            {
+                yield return text.Substring(currentWordStart);
+            }
+        }
+
         public static string Join<T>(Func<T, T, string> getSeparator, IEnumerable<T> sequence)
         {
             var result = new StringBuilder();

@@ -24,28 +24,26 @@ namespace Ginger.Runner
         public static SentenceMeaning Preprocess(SentenceMeaning meaning) =>
             meaning.Map2(rules => rules.ConvertAll(Preprocess), statements => statements.ConvertAll(Preprocess));
 
-        public static Func<ParsedSentence, MayBe<ComplexTerm>> MakeUnderstander(
+        public static MayBe<ComplexTerm> BuildUnderstanding(
+            string quote,
             IRussianGrammarParser grammarParser,
-            SentenceUnderstander sentenceUnderstander,
-            Func<ParsedSentence, string> relevantQuoteGetter) =>
-            sentence => 
-            {
-                var quote = relevantQuoteGetter(sentence);
-                var parsedQuote = grammarParser.ParsePreservingQuotes(quote);
-                return sentenceUnderstander.Understand(parsedQuote)
-                        .Map(it => it.Meaning.Fold(
-                            _ => LogCheckingT(
-                                    None, 
-                                    $"understanding of '{quote}' produced one or more Rules. Only a set of statements is supported."),
-                            statements => LogCheckingT(
-                                Some(ComplexTerm(
-                                        Functor(InlinerFunctorName, statements.Count),
-                                        statements)),
-                                $"undestanding of '{quote}'")))
-                        .OrElse(() => LogCheckingT(
-                                    None, 
-                                    $"understanding of '{quote}'."));
-            };
+            SentenceUnderstander sentenceUnderstander)
+        {
+            var parsedQuote = grammarParser.ParsePreservingQuotes(quote);
+            return sentenceUnderstander.Understand(parsedQuote)
+                    .Map(it => it.Meaning.Fold(
+                        _ => LogCheckingT(
+                                None, 
+                                $"understanding of '{quote}' produced one or more Rules. Only a set of statements is supported."),
+                        statements => LogCheckingT(
+                            Some(ComplexTerm(
+                                    Functor(InlinerFunctorName, statements.Count),
+                                    statements)),
+                            $"undestanding of '{quote}'")))
+                    .OrElse(() => LogCheckingT(
+                                None, 
+                                $"understanding of '{quote}'."));
+        }
 
         public static ComplexTerm AccomodateInlinedArguments(FunctorBase functor, IReadOnlyCollection<Term> arguments)
         {
@@ -82,6 +80,8 @@ namespace Ginger.Runner
         }
 
         public static InvalidOperationException MetaModifierError(string message) =>  new (message);
+                
+        private static readonly string InlinerFunctorName = "I" + Guid.NewGuid().ToString("N");
 
         private static Rule Preprocess(Rule rule) => 
             Rule(Preprocess(rule.Conclusion), rule.Premises.Select(Preprocess));
@@ -120,8 +120,7 @@ namespace Ginger.Runner
                 : throw new InvalidOperationException(
                     $"Invalid use of {ct.Functor.Name} meta-modifier in {Print(ct)}. " + 
                     "Its first argument should be a @variable(...) complex term.");
-                
-        private static readonly string InlinerFunctorName = "I" + Guid.NewGuid().ToString("N");
+        
         private const string Variable = "@variable";
    }
 }

@@ -16,23 +16,5 @@ namespace Prolog.Engine.Miscellaneous
 
         public static Type RemoveNullability(this Type @this) =>
             Nullable.GetUnderlyingType(@this) ?? @this;
-
-        public static IEnumerable<string> SplitAtUpperCharacters(this string text)
-        {
-            var currentWordStart = 0;
-            for (var i = 1; i < text.Length; ++i)
-            {
-                if (char.IsUpper(text[i]))
-                {
-                    yield return text.Substring(currentWordStart, i - currentWordStart);
-                    currentWordStart = i;
-                }
-            }
-
-            if (currentWordStart < text.Length)
-            {
-                yield return text.Substring(currentWordStart);
-            }
-        }
     }
 }

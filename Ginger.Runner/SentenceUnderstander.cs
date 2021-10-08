@@ -6,21 +6,29 @@ using System.Reflection;
 using Prolog.Engine.Miscellaneous;
 using Prolog.Engine.Parsing;
 using Ginger.Runner.Solarix;
+using Prolog.Engine;
 
 namespace Ginger.Runner
 {
+    using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
+    
     using static MakeCompilerHappy;
     using static MayBe;
     using static MonadicParsing;
     using static PrologParser;
     using static TextParsingPrimitives;
 
-    using ConcreteUnderstander = Func<ParsedSentence, MayBe<(UnderstoodSentence UnderstoodSentence, int UnderstandingConfidenceLevel)>>;
+    internal sealed record UnderstoodSentence(ParsedSentence Sentence, string PatternId, SentenceMeaning Meaning);
 
     internal sealed class SentenceUnderstander
     {
-        private SentenceUnderstander(IReadOnlyCollection<ConcreteUnderstander> phraseTypeUnderstanders) =>
+        private SentenceUnderstander(
+            IReadOnlyCollection<ConcreteUnderstander> phraseTypeUnderstanders,
+            IRussianGrammarParser russianGrammarParser)
+        {
             _phraseTypeUnderstanders = phraseTypeUnderstanders;
+            _grammarParser = russianGrammarParser;
+        }
 
         public MayBe<UnderstoodSentence> Understand(ParsedSentence sentence) =>
             Understand(sentence, _phraseTypeUnderstanders);
@@ -40,7 +48,7 @@ namespace Ginger.Runner
             IRussianLexicon russianLexicon) 
         {
             var concreteUnderstanders = new List<ConcreteUnderstander>();
-            var result = new SentenceUnderstander(concreteUnderstanders);
+            var result = new SentenceUnderstander(concreteUnderstanders, grammarParser);
 
             foreach (var generativePattern in generativePatterns)
             {
@@ -51,7 +59,7 @@ namespace Ginger.Runner
                 var ambiguouslyUnderstoodPatterns = (
                     from it in concretePatterns
                     let pattern = it.PatternWithMeaning.Pattern
-                    let understanding = Understand(pattern.AsParsedSentence(), concreteUnderstanders)
+                    let understanding = result.Understand(pattern.AsParsedSentence(), concreteUnderstanders)
                     where understanding.HasValue
                     select new
                     { 
@@ -84,12 +92,12 @@ namespace Ginger.Runner
             return result;
         }
 
-        private static MayBe<UnderstoodSentence> Understand(
+        private MayBe<UnderstoodSentence> Understand(
             ParsedSentence sentence, 
             IEnumerable<ConcreteUnderstander> phraseTypeUnderstanders) 
         =>
             phraseTypeUnderstanders
-                .Select(phraseTypeUnderstander => phraseTypeUnderstander(sentence))
+                .Select(phraseTypeUnderstander => phraseTypeUnderstander.Understand(sentence, MeaningBuilder.Create(this, _grammarParser)))
                 .Where(result => result.HasValue)
                 .Select(result => result.Value)
                 .AggregateWhile(
@@ -140,5 +148,6 @@ namespace Ginger.Runner
         }
 
         private readonly IReadOnlyCollection<ConcreteUnderstander> _phraseTypeUnderstanders;
+        private readonly IRussianGrammarParser _grammarParser;
     }
 }

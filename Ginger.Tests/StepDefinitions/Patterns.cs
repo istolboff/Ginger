@@ -182,12 +182,6 @@ namespace Ginger.Tests.StepDefinitions
             }
         }
 
-        internal SentenceUnderstander SentenceUnderstander
-        {
-            get => _scenarioContext.Get<SentenceUnderstander>();
-            set => _scenarioContext.Set(value);
-        }
-
         internal static SentenceMeaning ParseMeaning(string meaning) =>
             Either(
                 WholeInput(PrologParsers.ProgramParser), 
@@ -196,6 +190,12 @@ namespace Ginger.Tests.StepDefinitions
             .Fold(
                 parsingError => throw new InvalidOperationException(parsingError.Text),
                 meaning1 => meaning1.Value);
+
+        internal SentenceUnderstander SentenceUnderstander
+        {
+            get => _scenarioContext.Get<SentenceUnderstander>();
+            set => _scenarioContext.Set(value);
+        }
 
         private SutSpecificationBuilder? SutDescriptionBuilder
         {
