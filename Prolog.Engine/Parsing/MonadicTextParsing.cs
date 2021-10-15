@@ -21,8 +21,11 @@ namespace Prolog.Engine.Parsing
 
         public TextInput SkipToEndOfLine() =>
             MoveTo(Text
-                    .IndexOfAny(new[] { '\r', '\n' }, Position)
-                    .Apply(i => i >= 0 ? i : Text.Length));
+                    .IndexOfAny(new[] { '\r', '\n' }, Position) switch 
+                        { 
+                            var i when i >= 0 => i, 
+                            _ => Text.Length 
+                        });
 
         public override string ToString() => 
             Text.Insert(Position, "▲");

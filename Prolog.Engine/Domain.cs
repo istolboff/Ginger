@@ -16,7 +16,13 @@ namespace Prolog.Engine
 
     public sealed record Number(int Value) : Term;
 
-    public sealed record Variable(string Name, bool IsTemporary) : Term;
+    public sealed record Variable(string Name, bool IsTemporary) : Term
+    {
+        public static Variable MakeNew(bool isTemporary = true) =>
+            new (Name: $"_{++_nextNewVariableIndex}", IsTemporary: isTemporary);
+
+        private static int _nextNewVariableIndex;
+    }
 
     public abstract record FunctorBase(string Name, int Arity);
 

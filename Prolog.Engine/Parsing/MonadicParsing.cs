@@ -62,9 +62,11 @@ namespace Prolog.Engine.Parsing
                         .Map(r => Result(projector(r.First.Value, r.Second.Value), r.Second.Rest)));
 
         public static Parser<TInput, TValue> Where<TInput, TValue>(this Parser<TInput, TValue> parser, Func<TValue, bool> predicate) =>
-            input => parser(input).Apply(r => r.IsLeft || predicate(r.Right!.Value)
-                    ? r
-                    : Left(new ParsingError<TInput>($"Unexpected value {r.Right!.Value}", input)));
+            input => parser(input) switch 
+                        { 
+                            var r when r.IsLeft || predicate(r.Right!.Value) => r,
+                            var r => Left(new ParsingError<TInput>($"Unexpected value {r.Right!.Value}", input)) 
+                        };
 
         public static Parser<TInput, TValue2> Then<TInput, TValue1, TValue2>(this Parser<TInput, TValue1> parser1, Parser<TInput, TValue2> parser2) =>
             input => parser1(input).Map(r => parser2(r.Rest)).Flatten();

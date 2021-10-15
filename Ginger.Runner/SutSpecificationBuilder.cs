@@ -8,10 +8,16 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Ginger.Runner
 {
-    using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
-    
+    using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
+
     using static DomainApi;
-    using static PrettyPrinting;
+    using static Either;
+    using static MayBe;
+    using static TextManipulation;
+
+    internal sealed record EntityDefiniton(
+        ComplexTerm Definition, 
+        MayBe<WordOrQuotation<DisambiguatedWord>> FunctorNameWords);
 
     internal sealed class SutSpecificationBuilder
     {
@@ -23,34 +29,42 @@ namespace Ginger.Runner
 
         public void DefineEntity(string phrasing)
         {
-            var entityDefinitions = Understand(phrasing)
-                    .Fold(
+            var understoodSentence = Understand(phrasing); 
+
+            var rules = understoodSentence.MeaningWithRecipe.Fold(
                         rules => rules,
                         _ => throw new InvalidOperationException(
                             "When defining entities, only rule-defining sentences are alowed. " +
                             $"You're trying to use the sentence '{phrasing}' which is understood as a set of statements."));
-            
-            var nonFactRules = entityDefinitions.Where(ed => !ed.IsFact).AsImmutable();
+
+            var (facts, nonFactRules) = rules.Segregate<RuleWithRecipe, RuleWithRecipe, Rule>(
+                                    r => r.Rule.IsFact switch { true => Left(r), _ => Right(r.Rule)});
             if (nonFactRules.Any())
             {
                 throw new InvalidOperationException("When defining entities, only facts are allowed. " + 
                             $"The sentence '{phrasing}' produces the following non-fact rule(s): " +
-                            string.Join(Environment.NewLine, nonFactRules));
+                            Print(nonFactRules));
             }
 
-            _entityDefinitions.AddRange(entityDefinitions.Select(ed => ed.Conclusion));
+            _entityDefinitions.AddRange(
+                facts.Select(fact => 
+                    new EntityDefiniton(
+                        fact.Rule.Conclusion, 
+                        from recipe in fact.Recipe.ConclusionBuildingRecipe.FunctorNameRecipe
+                        from subTree in recipe.TryLocateCompleteSubTreeOfNameElements(understoodSentence.Sentence)
+                        select subTree)));
         }
 
         public void DefineEffect(string phrasing)
         {
-            var effectAsRules = Understand(phrasing)
+            var effectAsRules = Understand(phrasing).MeaningWithRecipe
                     .Fold(
                         rules => rules,
                         _ => throw new InvalidOperationException(
                             "When defining effects, only rule-defining sentences are alowed. " +
                             $"You're trying to use the sentence '{phrasing}' which is understood as a set of statements."));
 
-            _effects.AddRange(effectAsRules.Select(MoveEntityDefinitionsFromConclusionToPremises));
+            _effects.AddRange(effectAsRules.Select(it => MoveEntityDefinitionsFromConclusionToPremises(it.Rule)));
 
             Rule MoveEntityDefinitionsFromConclusionToPremises(Rule rule)
             {
@@ -59,7 +73,7 @@ namespace Ginger.Runner
                 {
                     throw new InvalidOperationException(
                         $"Effect definition '{phrasing}' was understood as a rule that is just a set of " + 
-                        $"entity definitions {string.Join(",", extraPremises)} " + 
+                        $"entity definitions {Print(extraPremises, ",")} " + 
                         "Please rephrase the effect definition so that it's understood as one or more non-trivial rules.");
                 }
 
@@ -123,14 +137,14 @@ namespace Ginger.Runner
 
         public void DefineBusinessRule(string phrasing)
         {
-            var businessRules = Understand(phrasing)
+            var businessRules = Understand(phrasing).MeaningWithRecipe
                     .Fold(
                         rules => rules,
                         _ => throw new InvalidOperationException(
                             "When defining business rule, only rule-defining sentences are alowed. " +
                             $"You're trying to use the sentence '{phrasing}' which is understood as a set of statements."));
 
-            _businessRules.AddRange(businessRules.Select(TransformBusinessRule));
+            _businessRules.AddRange(businessRules.Select(r => TransformBusinessRule(r.Rule)));
 
             BusinessRule TransformBusinessRule(Rule rule)
             {
@@ -140,53 +154,196 @@ namespace Ginger.Runner
 
             (IReadOnlyCollection<ComplexTerm> PartialState, IReadOnlyCollection<ComplexTerm> RemainingPremises) SplitPremises(
                 IReadOnlyCollection<ComplexTerm> businssRulePremises)
-            {
-                var partialStateTerms = new List<ComplexTerm>();
-                var remainingPremises = new List<ComplexTerm>();
-                foreach (var premise in businssRulePremises)
-                {
-                    if (IsVariableEqualityCheck(premise) || IsEntityDefinition(premise))
-                    {
-                        remainingPremises.Add(premise);
-                    }
-                    else
-                    {
-                        partialStateTerms.Add(premise);
-                    }
-                }
-
-                return (partialStateTerms, remainingPremises);
-            }
+            =>
+                businssRulePremises.Segregate(
+                    premise => 
+                        IsVariableEqualityCheck(premise) || IsEntityDefinition(premise)
+                            ? Right<ComplexTerm, ComplexTerm>(premise)
+                            : Left(premise));
         }
 
         public void DefineInitialState(string phrasing)
         {
             _initialStates.AddRange(
-                Understand(phrasing).Fold(
-                    rules => rules.Select(InitialState.DeconstructRule),
-                    stateComponents => new InitialState(stateComponents).ToImmutable()));
+                Understand(phrasing).MeaningWithRecipe.Fold(
+                    rules => rules.Select(r => InitialState.DeconstructRule(r.Rule)),
+                    stateComponents => new InitialState(stateComponents.ConvertAll(sc => sc.ComplexTerm)).ToImmutable()));
         }
 
         public SutSpecification BuildDescription() =>
             new (
-                _entityDefinitions,
+                _entityDefinitions.ConvertAll(ed => ed.Definition),
                 _effects,
                 _businessRules,
                 _initialStates);
 
-        private SentenceMeaning Understand(string phrasing) =>
-            _sentenceUnderstander
-                .Understand(_grammarParser.ParsePreservingQuotes(phrasing))
-                .Fold(
-                    failedUnderstandingAttempts => throw UnderstandingFailed(phrasing, failedUnderstandingAttempts),
-                    understoodSentence => understoodSentence.Meaning);
+        private UnderstoodSentence Understand(string phrasing)
+        {
+            var sentence = _grammarParser.ParsePreservingQuotes(phrasing);
+            var understandingOutcome = _sentenceUnderstander.Understand(
+                    sentence, 
+                    CreateMeaningBuilder());
+            
+            return understandingOutcome.Fold(
+                failedAttempts => throw UnderstandingFailed(
+                                    phrasing, 
+                                    understandingOutcome.Left!.Concat(failedAttempts)),
+                understoodSentence => understoodSentence);
+        }
+
+        private UnderstandingOutcome UnderstandCore(ParsedSentence sentence)
+        {
+            var understandingOutcome = _sentenceUnderstander.Understand(sentence, CreateMeaningBuilder());
+            if (understandingOutcome.IsRight)
+            {
+                return understandingOutcome;
+            }
+
+            var woundSentence = TryWoundStructuresInSentence(sentence);
+            if (!woundSentence.HasValue)
+            {
+                return understandingOutcome;
+            }
+
+            var woundSentenceUnderstanding = 
+                    _sentenceUnderstander.Understand(
+                        woundSentence.Value!.Sentence,
+                        OverrideMeaningBuilder(
+                            CreateMeaningBuilder(), 
+                            woundSentence.Value!.WoundEntities));
+
+            return woundSentenceUnderstanding.MapLeft(
+                failedAttempts => understandingOutcome.Left!.Concat(failedAttempts).AsImmutable());
+        }
 
         private static InvalidOperationException UnderstandingFailed(
             string phrasing, 
-            IReadOnlyCollection<FailedUnderstandingAttempt> failedUnderstandingAttempts)
+            IEnumerable<FailedUnderstandingAttempt> failedUnderstandingAttempts)
         {
             return new InvalidOperationException(
-                $"Could not understand the phrase {phrasing}:{Environment.NewLine}{Print(failedUnderstandingAttempts, Environment.NewLine)}");
+                $"Could not understand the phrase {phrasing}:{Environment.NewLine}" + 
+                Print(failedUnderstandingAttempts));
+        }
+
+        private MayBe<WoundSentence> TryWoundStructuresInSentence(ParsedSentence sentence)
+        {
+            var woundEntities = 
+               (from entityDefinition in _entityDefinitions
+                where entityDefinition.Definition.Arguments.Count == 1 && 
+                      entityDefinition.Definition.Arguments.Single() is Atom && 
+                      entityDefinition.FunctorNameWords.HasValue
+                group entityDefinition by entityDefinition.Definition.Functor.Name into g
+                let ed = g.First()
+                from foundStructurePosition in TryFindStructures(ed.FunctorNameWords.Value!, sentence.SentenceStructure)
+                select new WoundEntity(
+                        foundStructurePosition, 
+                        variable => ed.Definition with { Arguments = new (variable) })
+                ).AsImmutable();
+
+            if (!woundEntities.Any())
+            {
+                return None;
+            }
+
+            var sentenceWithWoundSubstructures = ReplaceStructuresWithTheirRoots(
+                sentence.SentenceStructure, 
+                woundEntities.Select(we => we.PositionInSentence).ToHashSet());
+
+            var oldPositionsToNewPositionsMap = sentenceWithWoundSubstructures
+                .IterateByPosition()
+                .Select((it, index) => (it.PositionInSentence, index))
+                .ToDictionary(
+                    it => it.PositionInSentence,
+                    it => it.index);
+
+            return Some(
+                new WoundSentence(
+                    ParsedSentence.From(
+                        sentenceWithWoundSubstructures.Transform(
+                            it => it with 
+                                    { 
+                                        PositionInSentence = oldPositionsToNewPositionsMap[it.PositionInSentence]
+                                    })),
+                    woundEntities.ConvertAll(
+                            it => it with 
+                                    { 
+                                        PositionInSentence = oldPositionsToNewPositionsMap[it.PositionInSentence] 
+                                    })));
+
+            static IEnumerable<int> TryFindStructures(
+                WordOrQuotation<DisambiguatedWord> structure, 
+                WordOrQuotation<Word> inSentence)
+            =>
+                inSentence
+                    .IterateDepthFirst()
+                    .Where(currentSubTree => Match(structure, currentSubTree))
+                    .Select(woq => woq.PositionInSentence);
+
+            static WordOrQuotation<Word> ReplaceStructuresWithTheirRoots(
+                WordOrQuotation<Word> woq,
+                ICollection<int> stopSubtreesAtIndexes)
+            =>
+                woq with
+                {
+                    Children = stopSubtreesAtIndexes.Contains(woq.PositionInSentence)
+                                    ? Array.Empty<WordOrQuotation<Word>>()
+                                    : woq.Children.ConvertAll(c => 
+                                            ReplaceStructuresWithTheirRoots(c, stopSubtreesAtIndexes))
+                };
+
+            static bool Match(WordOrQuotation<DisambiguatedWord> structure, WordOrQuotation<Word> subTree) =>
+                structure.IterateDepthFirst().ToArray() is var expectedStructure &&
+                subTree.IterateDepthFirst().ToArray() is var actualStructure &&
+                expectedStructure.Length == actualStructure.Length &&
+                expectedStructure
+                    .Zip(actualStructure)
+                    .Select((pair, index) => (ExpectedWord: pair.First.Word, ActualWord: pair.Second.Word, Index: index))
+                    .AsImmutable() is var allPairs &&
+                allPairs.All(it => 
+                   (from expectedWord in it.ExpectedWord
+                    from actualWord in it.ActualWord
+                    select (it.Index == 0 || expectedWord.LeafLinkType == actualWord.LeafLinkType) &&
+                            actualWord.LemmaVersions.Any(matchedLemmaVersion => 
+                                matchedLemmaVersion.EntryId == expectedWord.LemmaVersion.EntryId))
+                    .OrElse(false));
+        }
+
+        private MeaningBuilder CreateMeaningBuilder() =>
+            MeaningBuilder.Create(sentence => UnderstandCore(_grammarParser.ParsePreservingQuotes(sentence)));
+
+        private static MeaningBuilder OverrideMeaningBuilder(
+            MeaningBuilder originalMeaningBuilder,
+            IReadOnlyCollection<WoundEntity> woundEntities)
+        {
+            var involvedWoundEntities = new Dictionary<WoundEntity, Variable>();
+
+            return originalMeaningBuilder with 
+            {
+                BuildAtom =
+                        (meaningBuilder, atomRecipe, sentence) =>
+                            (atomRecipe.AtomContentBuilder.NameComponentGetters.Count == 1 &&
+                                atomRecipe.AtomContentBuilder.NameComponentGetters.Single() is var singleName &&
+                                woundEntities.FirstOrDefault(we => we.PositionInSentence == singleName.PositionInSentence) is var relevantWoundEntity &&
+                                relevantWoundEntity != null)
+                            ? Right<FailedUnderstandingAttempt, Term>(
+                                involvedWoundEntities.GetOrCreate(
+                                    relevantWoundEntity, 
+                                    () => Prolog.Engine.Variable.MakeNew(isTemporary: false)))
+                            : originalMeaningBuilder.BuildAtom(meaningBuilder, atomRecipe, sentence),
+                BuildAllMeaningStatements =
+                        (meaningBuilder, statementRecipies, sentence) =>
+                        {
+                            var statements = originalMeaningBuilder.BuildAllMeaningStatements(meaningBuilder, statementRecipies, sentence);
+                            return !involvedWoundEntities.Any()
+                                    ? statements
+                                    : statements.Map(s => s
+                                        .Concat(involvedWoundEntities.Select(we => 
+                                            new ComplexTermWithRecipe(
+                                                we.Key.EntityReferenceTemplate(we.Value), 
+                                                None)))
+                                        .AsImmutable());
+                        }
+            };
         }
 
         private static bool IsVariableEqualityCheck(ComplexTerm complexTerm) =>
@@ -194,13 +351,17 @@ namespace Ginger.Runner
             complexTerm.Arguments.All(argument => argument is Atom || argument is Variable);
 
         private bool IsEntityDefinition(ComplexTerm complexTerm) =>
-            _entityDefinitions.Any(ed => Unification.IsPossible(ed, complexTerm));
+            _entityDefinitions.Any(ed => Unification.IsPossible(ed.Definition, complexTerm));
 
         private readonly IRussianGrammarParser _grammarParser;
         private readonly SentenceUnderstander _sentenceUnderstander;
-        private readonly List<ComplexTerm> _entityDefinitions = new ();
+        private readonly List<EntityDefiniton> _entityDefinitions = new ();
         private readonly List<Rule> _effects = new ();
         private readonly List<BusinessRule> _businessRules = new ();
         private readonly List<InitialState> _initialStates = new ();
+
+        private record WoundSentence(ParsedSentence Sentence, IReadOnlyCollection<WoundEntity> WoundEntities);
+
+        private record WoundEntity(int PositionInSentence, Func<Variable, ComplexTerm> EntityReferenceTemplate);
     }
 }

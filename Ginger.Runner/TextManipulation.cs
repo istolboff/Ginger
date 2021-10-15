@@ -52,5 +52,21 @@ namespace Ginger.Runner
             string.Join(
                 string.Empty,
                 @this.Select((s, i) => useCamelCase && i == 0 ? s : textInfo.ToTitleCase(s)));
+
+        public static string Print<T>(T value, string? enumSeparator = null) =>
+                Prolog.Engine.PrettyPrinting.Print(
+                    value, 
+                    enumSeparator ?? Environment.NewLine,
+                    Prolog.Engine.PrettyPrinting.CustomPrinter((FailedUnderstandingAttempt failedAttempt) => 
+                        $"{failedAttempt.PatternId}: {TextManipulation.Print(failedAttempt.FailureReason)}"),
+                    Prolog.Engine.PrettyPrinting.CustomPrinter((MultipleUnderstandingFailureReasons r) =>
+                        "MultipleUnderstandingFailureReasons [" + Environment.NewLine + "\t" +
+                        TextManipulation.Print(r.Reasons).Replace(Environment.NewLine, Environment.NewLine + "\t") + 
+                        Environment.NewLine + "]"),
+                    Prolog.Engine.PrettyPrinting.CustomPrinter((MetaUnderstandFailure r) =>
+                        $"MetaUnderstandFailure({r.Reason}, " +
+                        r.CallDetails.Fold(ct => TextManipulation.Print(ct), s => s) + 
+                        ")"));
+
     }
 }

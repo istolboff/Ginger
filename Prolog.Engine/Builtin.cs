@@ -81,7 +81,7 @@ namespace Prolog.Engine
                         IterableList(subList)
                             .AggregateWhile(
                                 (UnificationResult: Unification.Success(), 
-                                 MatchedElements: new HashSet<Term>(ReferenceEqualityComparer<Term>.Default)),
+                                 MatchedElements: new HashSet<Term>(ReferenceEqualityComparer.Instance)),
                                 (state, listElement) => 
                                     IterableList(list)
                                         .TryFirst(t => 
@@ -105,7 +105,7 @@ namespace Prolog.Engine
                         IterableList(setList)
                             .Aggregate(
                                 (UnificationResult: Unification.Success(), 
-                                 MatchedElements: new HashSet<Term>(ReferenceEqualityComparer<Term>.Default),
+                                 MatchedElements: new HashSet<Term>(ReferenceEqualityComparer.Instance),
                                  ResultingList: EmptyList),
                                 (state, term) => 
                                     IterableList(deleteList)

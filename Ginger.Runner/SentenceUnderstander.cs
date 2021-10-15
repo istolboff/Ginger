@@ -10,7 +10,7 @@ using Prolog.Engine;
 
 namespace Ginger.Runner
 {
-    using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
+    using MeaningWithRecipe = Either<IReadOnlyCollection<RuleWithRecipe>, IReadOnlyCollection<ComplexTermWithRecipe>>;
     using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
     
     using static Either;
@@ -20,37 +20,44 @@ namespace Ginger.Runner
     using static PrologParser;
     using static TextParsingPrimitives;
 
-    internal sealed record UnderstoodSentence(ParsedSentence Sentence, string PatternId, SentenceMeaning Meaning);
+    internal sealed record RuleWithRecipe(Rule Rule, RuleBuildingRecipe Recipe);
+
+    internal sealed record ComplexTermWithRecipe(ComplexTerm ComplexTerm, MayBe<ComplexTermBuildingRecipe> Recipe);
+
+    internal sealed record UnderstoodSentence(
+        ParsedSentence Sentence, 
+        string PatternId,
+        MeaningWithRecipe MeaningWithRecipe);
 
     internal sealed class SentenceUnderstander
     {
-        private SentenceUnderstander(
-            IReadOnlyCollection<ConcreteUnderstander> phraseTypeUnderstanders,
-            IRussianGrammarParser russianGrammarParser)
+        private SentenceUnderstander(IReadOnlyCollection<ConcretePatternOfUnderstanding> phraseTypeUnderstanders)
         {
             _phraseTypeUnderstanders = phraseTypeUnderstanders;
-            _grammarParser = russianGrammarParser;
         }
 
-        public UnderstandingOutcome Understand(ParsedSentence sentence) =>
-            Understand(sentence, _phraseTypeUnderstanders);
+        public UnderstandingOutcome Understand(ParsedSentence sentence, MeaningBuilder meaningBuilder) =>
+            Understand(sentence, _phraseTypeUnderstanders, meaningBuilder);
 
         public static SentenceUnderstander LoadFromEmbeddedResources(
             IRussianGrammarParser grammarParser,
-            IRussianLexicon russianLexicon) 
+            IRussianLexicon russianLexicon,
+            MeaningBuilder meaningBuilder) 
         =>
             LoadFromPatterns(
                 ParsePatterns(ReadEmbeddedResource("Ginger.Runner.SentenceUnderstandingRules.txt")),
                 grammarParser,
-                russianLexicon);
+                russianLexicon,
+                meaningBuilder);
 
         public static SentenceUnderstander LoadFromPatterns(
             IEnumerable<GenerativePattern> generativePatterns,
             IRussianGrammarParser grammarParser,
-            IRussianLexicon russianLexicon) 
+            IRussianLexicon russianLexicon,
+            MeaningBuilder meaningBuilder) 
         {
-            var concreteUnderstanders = new List<ConcreteUnderstander>();
-            var result = new SentenceUnderstander(concreteUnderstanders, grammarParser);
+            var concreteUnderstanders = new List<ConcretePatternOfUnderstanding>();
+            var result = new SentenceUnderstander(concreteUnderstanders);
 
             foreach (var generativePattern in generativePatterns)
             {
@@ -61,7 +68,10 @@ namespace Ginger.Runner
                 var ambiguouslyUnderstoodPatterns = (
                     from it in concretePatterns
                     let pattern = it.PatternWithMeaning.Pattern
-                    let understanding = result.Understand(pattern.AsParsedSentence(), concreteUnderstanders)
+                    let understanding = Understand(
+                                            pattern.AsParsedSentence(), 
+                                            concreteUnderstanders,
+                                            meaningBuilder)
                     where understanding.IsRight
                     select new
                     { 
@@ -94,14 +104,15 @@ namespace Ginger.Runner
             return result;
         }
 
-        private UnderstandingOutcome Understand(
+        private static UnderstandingOutcome Understand(
             ParsedSentence sentence, 
-            IEnumerable<ConcreteUnderstander> phraseTypeUnderstanders) 
+            IEnumerable<ConcretePatternOfUnderstanding> phraseTypeUnderstanders,
+            MeaningBuilder meaningBuilder) 
         =>
             phraseTypeUnderstanders
-                .Select(phraseTypeUnderstander => phraseTypeUnderstander.Understand(sentence, MeaningBuilder.Create(this, _grammarParser)))
+                .Select(phraseTypeUnderstander => phraseTypeUnderstander.Understand(sentence, meaningBuilder))
                 .AggregateWhile(
-                    (Failures: new List<FailedUnderstandingAttempt>(), UnderstandingResult: MakeNone<UnderstandingResult>()),
+                    (Failures: new List<FailedUnderstandingAttempt>(), UnderstandingResult: MakeNone<SuccessfulUnderstanding>()),
                     (state, understandingAttemptOutcome) =>
                         understandingAttemptOutcome switch
                         {
@@ -158,7 +169,6 @@ namespace Ginger.Runner
                         result => result.Value);
         }
 
-        private readonly IReadOnlyCollection<ConcreteUnderstander> _phraseTypeUnderstanders;
-        private readonly IRussianGrammarParser _grammarParser;
+        private readonly IReadOnlyCollection<ConcretePatternOfUnderstanding> _phraseTypeUnderstanders;
     }
 }

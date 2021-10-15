@@ -55,14 +55,12 @@ namespace Prolog.Engine.Miscellaneous
             @this
                 .Where(predicate)
                 .Take(2)
-                .AsImmutable()
-                .Apply(matchingElements =>
-                    matchingElements.Count switch 
-                    {
-                        0 => None,
-                        1 => Some(matchingElements.Single()),
-                        _ => throw reportError(matchingElements)
-                    });
+                .AsImmutable() switch
+                {
+                    var matches when matches.Count == 0 => None,
+                    var matches when matches.Count == 1 => Some(matches.Single()),
+                    var matches => throw reportError(matches)
+                };
 
         public static T Single<T>(
             this IEnumerable<T> @this,
@@ -117,6 +115,15 @@ namespace Prolog.Engine.Miscellaneous
             @this.Add(key, value);
             return value;
         }
+
+        public static TValue GetOrCreate<TKey, TValue>(
+            this IDictionary<TKey, TValue> @this, 
+            TKey key,
+            Func<TValue> createValue)
+        =>
+            @this.TryGetValue(key, out var value) 
+                ? value 
+                : @this.AddAndReturnValue(key, createValue());
 
         public static IDictionary<TKey, TValue> AddAndReturnSelf<TKey, TValue>(
             this IDictionary<TKey, TValue> @this, 
@@ -217,6 +224,16 @@ namespace Prolog.Engine.Miscellaneous
                         .Map(it => it.index)
                         .OrElse(-1)
             };
+
+        public static (IReadOnlyCollection<TLeft> Lefts, IReadOnlyCollection<TRight> Rights) Segregate<T, TLeft, TRight>(
+            this IReadOnlyCollection<T> @this,
+            Func<T, Either<TLeft, TRight>> func) 
+        =>
+            @this.Aggregate(
+                (Lefts: new List<TLeft>(), Rights: new List<TRight>()), 
+                (accumulator, it) => func(it).Fold(
+                    left => (accumulator.Lefts.AddAndReturnSelf(left), accumulator.Rights),
+                    right => (accumulator.Lefts, accumulator.Rights.AddAndReturnSelf(right))));
     }
     
     internal static class Immutable

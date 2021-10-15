@@ -33,10 +33,7 @@ namespace Ginger.Runner
                                             }))
                 .Select(it => 
                     (
-                        PatternWithMeaning: it.patternWithMeaning with 
-                        { 
-                            Meaning = MeaningMetaModifiers.Preprocess(it.patternWithMeaning.Meaning) 
-                        }, 
+                        PatternWithMeaning: it.patternWithMeaning, 
                         PatternId: PatternId + 
                                     it.IdSuffix + 
                                     (it.numberOfReplicas > 0 ? $"-{it.numberOfReplicas}" : string.Empty)

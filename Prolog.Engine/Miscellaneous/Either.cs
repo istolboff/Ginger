@@ -69,6 +69,12 @@ namespace Prolog.Engine.Miscellaneous
                 Left<TLeft, TRight>,
                 right => right.Fold(Left<TLeft, TRight>, Right<TLeft, TRight>));
 
+        public static Either<TLeft, TRightFinal> Select<TLeft, TRightOriginal, TRightFinal>(
+            this Either<TLeft, TRightOriginal> @this,
+            Func<TRightOriginal, TRightFinal> selector)
+        =>
+            @this.Map(selector);
+
         public static Either<TLeft, TRightFinal> SelectMany<TLeft, TRightOriginal, TRightIntermediate, TRightFinal>(
             this Either<TLeft, TRightOriginal> @this,
             Func<TRightOriginal, Either<TLeft, TRightIntermediate>> selector,

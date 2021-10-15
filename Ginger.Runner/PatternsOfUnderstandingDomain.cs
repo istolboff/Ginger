@@ -9,16 +9,16 @@ using Ginger.Runner.Solarix;
 
 namespace Ginger.Runner
 {
-    using UnderstandingAttemptOutcome = Either<FailedUnderstandingAttempt, UnderstandingResult>;
+    using UnderstandingAttemptOutcome = Either<FailedUnderstandingAttempt, SuccessfulUnderstanding>;
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
-    using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuilingRecipe>, IReadOnlyCollection<ComplexTermBuilingRecipe>>;
-    using FunctorBuildingRecipe = Either<FunctorBase /* BuiltIn Functor */, (NameBuilingRecipe FunctorNameBuildingRecipe, int Arity) /* Regular Functor building recipe */>;
+    using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuildingRecipe>, IReadOnlyCollection<ComplexTermBuildingRecipe>>;
+    using FunctorBuildingRecipe = Either<FunctorBase /* BuiltIn Functor */, (NameBuildingRecipe FunctorNameBuildingRecipe, int Arity) /* Regular Functor building recipe */>;
 
     using static DomainApi;
     using static Either;
     using static Impl;
     using static MayBe;
-    using static MeaningMetaModifiers;
+    using static MetaUnderstand;
     using static PatternBuilder;
     using static Prolog.Engine.Parsing.PrologParser;
 
@@ -30,43 +30,45 @@ namespace Ginger.Runner
         NumberOfSequencesOfExactWordsDiffer
     }
 
-    internal enum MetaUnderstandingFailure
-    {
-        ProducedRulesInsteadOfStatements
-    }
-
     internal abstract record UnderstandingFailureReason;
-    internal sealed record WrongNumberOfElements(int ExpectedNumber, int ActualNumber, NumberMismatchReason MismatchReason) : UnderstandingFailureReason;
-    internal sealed record SentenceShouldContainWordAtIndexes(IReadOnlyCollection<int> indexes) : UnderstandingFailureReason;
-    internal sealed record SentenceShouldContainSameWordAtTheseIndexes(IReadOnlyCollection<int> indexes, WordOrQuotation<Word>[] elements) : UnderstandingFailureReason;
+    internal sealed record WrongNumberOfElements(int ExpectedNumber, int ActualNumber, NumberMismatchReason MismatchReason, string PatternText, string SentenceText) : UnderstandingFailureReason;
+    internal sealed record SentenceShouldContainWordAtIndexes(IReadOnlyCollection<int> Indexes) : UnderstandingFailureReason;
+    internal sealed record SentenceShouldContainSameWordAtTheseIndexes(IReadOnlyCollection<int> Indexes, WordOrQuotation<Word>[] Elements) : UnderstandingFailureReason;
     internal sealed record SentenceShouldStartStopWithExactWords(bool ShouldStart, bool ExactWords) : UnderstandingFailureReason;
     internal sealed record WordExpected(WordChecker Checker, WordOrQuotation<Word> ActualWord) : UnderstandingFailureReason;
-    internal sealed record QuotationExpected(WordOrQuotation<Word> actualWord) : UnderstandingFailureReason;
+    internal sealed record QuotationExpected(WordOrQuotation<Word> ActualWord) : UnderstandingFailureReason;
     internal sealed record CheckLemmaVersionsFailed(LemmaVersion ExpectedLemmaVersion, Word ActualWord, string ActualWordContent, bool ExpectParticularWord) : UnderstandingFailureReason;
-    internal sealed record MetaUnderstandingFailed(string quote, MetaUnderstandingFailure reason) : UnderstandingFailureReason;
     internal sealed record EmptyNameBuilder : UnderstandingFailureReason;
     
-    internal sealed record MultipleUnderstandingFailureReasons(IReadOnlyCollection<UnderstandingFailureReason> Reasons) : UnderstandingFailureReason
+    internal sealed record MultipleUnderstandingFailureReasons(StructuralEquatableArray<UnderstandingFailureReason> Reasons) : UnderstandingFailureReason
     {
         public static UnderstandingFailureReason CreateFrom(IReadOnlyCollection<UnderstandingFailureReason> reasons) =>
             reasons.Count == 1 
                 ? reasons.Single()
-                : new MultipleUnderstandingFailureReasons(reasons);
-
-        public static UnderstandingFailureReason CreateFrom(IReadOnlyCollection<FailedUnderstandingAttempt> failedAttempts) =>
-            CreateFrom(failedAttempts.ConvertAll(it => it.FailureReason));
+                : new MultipleUnderstandingFailureReasons(
+                    new StructuralEquatableArray<UnderstandingFailureReason>(reasons));
     }
 
-    internal sealed record CheckPatternApi(string PatternId)
+    internal sealed record CheckPatternApi(string PatternId, string PatternText)
     {
         public CheckPatternApi WithSuffix(string suffix) =>
             this with { PatternId = PatternId + suffix };
 
-        public Either<FailedUnderstandingAttempt, Unit> CheckNumberOfElements(int expectedNumber, int actualNumber, NumberMismatchReason mismatchReason) =>
+        public Either<FailedUnderstandingAttempt, Unit> CheckNumberOfElements(
+            int expectedNumber, 
+            int actualNumber, 
+            NumberMismatchReason mismatchReason,
+            string sentenceText)
+        =>
             actualNumber switch 
             {
                 var _ when actualNumber == expectedNumber => Right(Unit.Instance),
-                _ => FailedAttempt(new WrongNumberOfElements(ExpectedNumber: expectedNumber, ActualNumber: actualNumber, MismatchReason: mismatchReason))
+                _ => FailedAttempt(new WrongNumberOfElements(
+                                    ExpectedNumber: expectedNumber, 
+                                    ActualNumber: actualNumber, 
+                                    MismatchReason: mismatchReason,
+                                    PatternText: PatternText,
+                                    SentenceText: sentenceText))
             };
 
         public Either<FailedUnderstandingAttempt, Unit> CheckThatThereAreWordsAtIndexes(
@@ -123,8 +125,7 @@ namespace Ginger.Runner
                 (false, true) => Left(new QuotationExpected(actualWord) as UnderstandingFailureReason),
                 (false, false) => Right(0)
             })
-            .MapLeft((Func<UnderstandingFailureReason, FailedUnderstandingAttempt>)(r => 
-                new FailedUnderstandingAttempt(Some(PatternId), r)));
+            .MapLeft(r => new FailedUnderstandingAttempt(Some(PatternId), r));
 
         private syntacticshugar_EitherFromLeft<FailedUnderstandingAttempt> FailedAttempt(
             UnderstandingFailureReason reason) =>
@@ -134,32 +135,32 @@ namespace Ginger.Runner
             word.LemmaVersions.Select(lv => lv.EntryId);
     }
 
-    internal sealed record UnderstandingResult(UnderstoodSentence UnderstoodSentence, int UnderstandingConfidenceLevel);
+    internal sealed record SuccessfulUnderstanding(UnderstoodSentence UnderstoodSentence, int UnderstandingConfidenceLevel);
 
     internal sealed record PatternWithMeaning(DisambiguatedSentence Pattern, SentenceMeaning Meaning);
 
-    internal abstract record ConcreteUnderstander(CheckPatternApi PatternChecks)
+    internal abstract record ConcretePatternOfUnderstanding(CheckPatternApi PatternChecks)
     {
         public abstract UnderstandingAttemptOutcome Understand(ParsedSentence sentence, MeaningBuilder meaningBuilder);
     }
 
 #pragma warning disable CA1801 // Review unused parameters
-    internal sealed record RegularConcreteUnderstander(
+    internal sealed record RegularConcretePatternOfUnderstanding(
         CheckPatternApi PatternChecks,
         IReadOnlyCollection<MayBe<WordChecker>> SentenceElementsCheckers,
         IReadOnlyCollection<IReadOnlyCollection<int>> WordsUsedInMeaningTwiceOrMore,
         MeaningBuildingRecipe MeaningBuildingRecipe,
         IRussianLexicon RussianLexicon)
-            : ConcreteUnderstander(PatternChecks)
+            : ConcretePatternOfUnderstanding(PatternChecks)
 #pragma warning restore CA1801
     {
         public override UnderstandingAttemptOutcome Understand(ParsedSentence sentence, MeaningBuilder meaningBuilder)
         =>
             from confidenceLevel in CheckSentenceStructure(sentence)
-            from meaning in meaningBuilder.BuildMeaning(MeaningBuildingRecipe, sentence)
-            select new UnderstandingResult(new UnderstoodSentence(sentence, PatternChecks.PatternId, meaning), confidenceLevel);
+            from meaning in meaningBuilder.BuildMeaning(meaningBuilder, MeaningBuildingRecipe, sentence)
+            select new SuccessfulUnderstanding(new UnderstoodSentence(sentence, PatternChecks.PatternId, meaning), confidenceLevel);
 
-        public static RegularConcreteUnderstander Create(
+        public static RegularConcretePatternOfUnderstanding Create(
             string patternId, 
             PatternWithMeaning patternWithMeaning,
             IRussianGrammarParser grammarParser,
@@ -189,8 +190,8 @@ namespace Ginger.Runner
                         it.Word.Map(
                             word => new WordChecker(
                                     word.LemmaVersion, 
-                                    ExpectParticularWord: word.IsFixed || 
-                                                            !allWordsUsedInMeaning.Contains(word.LemmaVersion.Lemma))));
+                                    ExpectParticularWord: word.IsFixed ||
+                                                          !allWordsUsedInMeaning.Contains(word.LemmaVersion.Lemma))));
 
             var wordsUsedInMeaningTwiceOrMore = patternElements
                     .Where(it => it.Word.HasValue && allWordsUsedInMeaning.Contains(it.Word.Value!.LemmaVersion.Lemma))
@@ -200,7 +201,7 @@ namespace Ginger.Runner
                     .AsImmutable();
 
             return new (
-                    new (patternId),
+                    new (patternId, patternWithMeaning.Pattern.Sentence),
                     sentenceElementsCheckers,
                     wordsUsedInMeaningTwiceOrMore,
                     meaning.Map2(
@@ -217,7 +218,8 @@ namespace Ginger.Runner
                  from checkNumberOfElenmentsd in PatternChecks.CheckNumberOfElements(
                                     expectedNumber: SentenceElementsCheckers.Count, 
                                     actualNumber: elements.Length,
-                                    NumberMismatchReason.NumberOfSentenceElementsDiffer)
+                                    NumberMismatchReason.NumberOfSentenceElementsDiffer,
+                                    parsedSentence.Sentence)
                  from sentenceStructureMatchingLevel in SentenceElementsCheckers.Zip(elements).AggregateWhile(
                                     Right<FailedUnderstandingAttempt, int>(0),
                                     (accumulator, it) =>
@@ -251,12 +253,12 @@ namespace Ginger.Runner
                 }));
     }
 #pragma warning disable CA1801 // Review unused parameters
-    internal sealed record DroppingQuotesUnderstander(
-        RegularConcreteUnderstander WrappedUnderstander,
+    internal sealed record ConcretePatternOfUnderstandingCapableOfDroppingQuotes(
+        RegularConcretePatternOfUnderstanding WrappedUnderstander,
         IReadOnlyCollection<IReadOnlyCollection<WordChecker>> SequencesOfExactWords,
         IRussianGrammarParser GrammarParser,
         IRussianLexicon RussianLexicon)
-            : ConcreteUnderstander(WrappedUnderstander.PatternChecks.WithSuffix("-DroppedQuotes"))
+            : ConcretePatternOfUnderstanding(WrappedUnderstander.PatternChecks.WithSuffix("-DroppedQuotes"))
 #pragma warning restore CA1801
     {
         public override UnderstandingAttemptOutcome Understand(ParsedSentence sentence, MeaningBuilder meaningBuilder) =>
@@ -264,8 +266,8 @@ namespace Ginger.Runner
             from result in WrappedUnderstander.Understand(sentence.IntroduceQuotes(unquotedWordsRanges, GrammarParser), meaningBuilder)
             select result with { UnderstoodSentence = result.UnderstoodSentence with { PatternId = PatternChecks.PatternId } };
 
-        public static MayBe<DroppingQuotesUnderstander> TryCreate(
-            RegularConcreteUnderstander wrappedUnderstander,
+        public static MayBe<ConcretePatternOfUnderstandingCapableOfDroppingQuotes> TryCreate(
+            RegularConcretePatternOfUnderstanding wrappedUnderstander,
             IRussianGrammarParser grammarParser,
             IRussianLexicon russianLexicon)
         {
@@ -285,7 +287,7 @@ namespace Ginger.Runner
                     .Split(wordChecker => !wordChecker.HasValue, wordChecker => (wordChecker.Value!));
 
             return sequencesOfExactWords.Any()
-                ? Some(new DroppingQuotesUnderstander(wrappedUnderstander, sequencesOfExactWords, grammarParser, russianLexicon))
+                ? Some(new ConcretePatternOfUnderstandingCapableOfDroppingQuotes(wrappedUnderstander, sequencesOfExactWords, grammarParser, russianLexicon))
                 : None;
         }
 
@@ -316,7 +318,8 @@ namespace Ginger.Runner
             return from checkNumberOfSequencesofExactWords in PatternChecks.CheckNumberOfElements(
                                                                 expectedNumber: SequencesOfExactWords.Count, 
                                                                 actualNumber: matchedSequences.Count,
-                                                                mismatchReason: NumberMismatchReason.NumberOfSequencesOfExactWordsDiffer)
+                                                                mismatchReason: NumberMismatchReason.NumberOfSequencesOfExactWordsDiffer,
+                                                                parsedSentence.Sentence)
                    from checkThatSentenceStartsAndFinishesWithOrWithoutExactWords in PatternChecks.
                                                             CheckThatSentenceStartsAndFinishesWithOrWithoutExactWords(
                                                                 startsWithExactWords: StartsWithExactWords, 
@@ -343,14 +346,14 @@ namespace Ginger.Runner
 
     internal static class PatternBuilder
     {
-        public static IEnumerable<ConcreteUnderstander> BuildUnderstanders(
+        public static IEnumerable<ConcretePatternOfUnderstanding> BuildUnderstanders(
             string patternId, 
             PatternWithMeaning patternWithMeaning,
             IRussianGrammarParser grammarParser,
             IRussianLexicon russianLexicon,
             SentenceUnderstander sentenceUnderstander)
         {
-            var regularUnderstander = RegularConcreteUnderstander.Create(
+            var regularUnderstander = RegularConcretePatternOfUnderstanding.Create(
                 patternId,
                 patternWithMeaning,
                 grammarParser,
@@ -360,7 +363,7 @@ namespace Ginger.Runner
             PatternEstablished?.Invoke(patternId, patternWithMeaning.Pattern, patternWithMeaning.Meaning);
             yield return regularUnderstander;
 
-            var droppingQuotesUnderstander = DroppingQuotesUnderstander.TryCreate(regularUnderstander, grammarParser, russianLexicon);
+            var droppingQuotesUnderstander = ConcretePatternOfUnderstandingCapableOfDroppingQuotes.TryCreate(regularUnderstander, grammarParser, russianLexicon);
             if (droppingQuotesUnderstander.HasValue)
             {
                 yield return droppingQuotesUnderstander.Value!;
@@ -376,7 +379,7 @@ namespace Ginger.Runner
                 ? new InvalidOperationException(message) 
                 : new NotSupportedException(message);
 
-        internal static RuleBuilingRecipe MakeRuleBuildingRecipe(
+        internal static RuleBuildingRecipe MakeRuleBuildingRecipe(
             DisambiguatedSentence pattern,
             Rule rule,
             PathesToWords words,
@@ -388,7 +391,7 @@ namespace Ginger.Runner
                 rule.Premises.ConvertAll(premise =>
                     MakeComplexTermBuildingRecipe(pattern, premise, words, grammarParser, sentenceUnderstander)));
 
-        internal static ComplexTermBuilingRecipe MakeComplexTermBuildingRecipe(
+        internal static ComplexTermBuildingRecipe MakeComplexTermBuildingRecipe(
             DisambiguatedSentence pattern,
             ComplexTerm complexTerm,
             PathesToWords words,
@@ -397,7 +400,7 @@ namespace Ginger.Runner
         {
             switch (complexTerm.Functor.Name)
             {
-                case MeaningMetaModifiers.Understand:
+                case MetaUnderstand.Name:
                 {
                     var singleArgument = complexTerm.Arguments.Single(
                         _ => true, 
@@ -409,7 +412,7 @@ namespace Ginger.Runner
                             ?? throw MetaModifierError($"The only argument of {complexTerm.Functor.Name} should be an atom."))
                             .Characters;
 
-                    return new (Right(new UnderstanderBuilingRecipe(words.LocateWord(quoteTextInPatern))));
+                    return new (Right(new UnderstanderBuildingRecipe(words.LocateSingleWord(quoteTextInPatern))));
                 }
 
                 default:
@@ -417,7 +420,7 @@ namespace Ginger.Runner
                     var functorRecipe = MakeFunctorBuildingRecipe(complexTerm.Functor, words);
                     var argumentRecipies = complexTerm.Arguments.ConvertAll(
                                         arg => MakeTermBuildingRecipe(pattern, arg, words, grammarParser, sentenceUnderstander));
-                    return new (Left(new RegularComplexTermBuilingRecipe(functorRecipe, argumentRecipies)));
+                    return new (Left(new RegularComplexTermBuildingRecipe(functorRecipe, argumentRecipies)));
                 }
             }
         }
@@ -428,13 +431,13 @@ namespace Ginger.Runner
         =>
             functor switch
             {
-                var _ when BuiltinPrologFunctors.Contains(functor.Name) || IsMetaModifier(functor) => Left(functor),
+                var _ when BuiltinPrologFunctors.Contains(functor.Name) || MetaFunctors.Contains(functor.Name) => Left(functor),
                 Functor f => Right((words.LocateWord(f.Name), f.Arity)),
                 _ => throw PatternBuildingException(
                         $"Cannot handle functor '{functor.Name}' of type {functor.GetType().Name} in meanining pattern.")
             };
 
-        private static TermBuilingRecipe MakeTermBuildingRecipe(
+        private static TermBuildingRecipe MakeTermBuildingRecipe(
             DisambiguatedSentence pattern, 
             Term term,
             PathesToWords words,
@@ -444,11 +447,11 @@ namespace Ginger.Runner
             term switch 
             {
                 Atom atom => 
-                    new AtomBuilingRecipe(words.LocateWord(atom.Characters)),
+                    new AtomBuildingRecipe(words.LocateWord(atom.Characters)),
                 Prolog.Engine.Number number => 
-                    new NumberBuilingRecipe(words.LocateWord(number.Value.ToString(CultureInfo.CurrentCulture))),
+                    new NumberBuildingRecipe(words.LocateWord(number.Value.ToString(CultureInfo.CurrentCulture))),
                 Variable variable => 
-                    new VariableBuilingRecipe(words.LocateWord(variable.Name, capitalizeFirstWord: true)),
+                    new VariableBuildingRecipe(words.LocateWord(variable.Name, capitalizeFirstWord: true)),
                 ComplexTerm complexTerm =>
                     MakeComplexTermBuildingRecipe(pattern, complexTerm, words, grammarParser, sentenceUnderstander),
                 _ => 
@@ -461,42 +464,41 @@ namespace Ginger.Runner
             return checkSucceeded;
         }
 
-        internal static T LogCheckingT<T>(T extraInfo, string log)
-        {
-            PatternRecognitionEvent?.Invoke(log, default);
-            return extraInfo;
-        }
-
         internal static readonly IReadOnlySet<string> BuiltinPrologFunctors = 
             new HashSet<string>(
                 Builtin.Functors
                     .Concat(Builtin.Rules.Select(r => r.Conclusion.Functor))
                     .Select(f => f.Name));
 
+        private static readonly IReadOnlySet<string> MetaFunctors = 
+            new HashSet<string> { MetaVariable.Name, MetaCall.Name, MetaUnderstand.Name };
     }
 
     internal record PathesToWords(
         IReadOnlyDictionary<string, IReadOnlyCollection<(int PositionInSentence, MayBe<LemmaVersion> LemmaVersion)>> Pathes,
         string Sentence)
     {
-        public NameBuilingRecipe LocateWord(string text, bool capitalizeFirstWord = false) =>
+        public NameBuildingRecipe LocateWord(string text, bool capitalizeFirstWord = false) =>
             new (
                 text.SplitAtUpperCharacters().Select(LocateSingleWord).AsImmutable(),
                 capitalizeFirstWord);
 
-        private Func<ParsedSentence, string> LocateSingleWord(string word) =>
+        public NameComponentBuildingRecipe LocateSingleWord(string word) =>
             Pathes
                 .TryFind(word)
                 .Map(value => 
                 {
                     var (positionInSentence, lemmaVersion) = value.First();
-                    return lemmaVersion.HasValue
-                        ? parsedSentence => parsedSentence.GetRelevantLemmaAt(positionInSentence, lemmaVersion.Value!, ReportException).Lemma
-                        : new Func<ParsedSentence, string>(parsedSentence => parsedSentence.GetQuotationAt(positionInSentence, ReportException));
+                    return new NameComponentBuildingRecipe(
+                        positionInSentence,
+                        lemmaVersion,
+                        lemmaVersion.HasValue
+                            ? parsedSentence => parsedSentence.GetRelevantLemmaAt(positionInSentence, lemmaVersion.Value!, ReportException).Lemma
+                            : new Func<ParsedSentence, string>(parsedSentence => parsedSentence.GetQuotationAt(positionInSentence, ReportException)));
                     Exception ReportException(string message) => PatternBuildingException(message, invalidOperation: true);
                 })
                 .OrElse(() => IsIntroducedVariable(word)
-                    ? _ => word
+                    ? new (default(int?), None,_ => word)
                     : throw PatternBuildingException(
                         $"Could not find word {word} in the pattern '{Sentence}'. " +
                         $"Only these words are present: [{string.Join(", ", Pathes.Keys)}]"));

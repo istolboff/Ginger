@@ -5,8 +5,6 @@ using JetBrains.Annotations;
 
 namespace Prolog.Engine.Miscellaneous
 {
-    using static Either;
-
     internal static class MayBe
     {
         public static MayBe<T> Some<T>(T value) => 
@@ -26,29 +24,24 @@ namespace Prolog.Engine.Miscellaneous
 				? Some(projector(@this.Value!, intermediate.Value!))
 				: None;
 		
-		public static MayBe<TValue2> SelectMany<TValue, TIntermediate, TValue2>(
-            this TValue? @this,
-            Func<TValue, MayBe<TIntermediate>> selector,
-            Func<TValue, TIntermediate, TValue2> projector) where TValue : struct 
-        =>
-			@this.HasValue && selector(@this.Value) is var intermediate && intermediate.HasValue
-				? Some(projector(@this.Value, intermediate.Value!))
-				: None;
-		
 		public static MayBe<IReadOnlyCollection<T>> LiftOptionality<T>(IReadOnlyCollection<MayBe<T>> sequence) 
         =>
 			sequence.Any(it => !it.HasValue)
 				? None
 				: Some(sequence.ConvertAll(it => it.Value!));
 
-        public static MayBe<Either<TLeft, TRight>> LiftOptionality<TLeft, TRight>(Either<MayBe<TLeft>, MayBe<TRight>> either) 
+		public static MayBe<IReadOnlyCollection<T>> LiftOptionality<T>(IReadOnlyCollection<T?> sequence) 
+            where T : struct
         =>
-            either.Fold(
-                left => left.Map(Left<TLeft, TRight>),
-                right => right.Map(Right<TLeft, TRight>));
+			sequence.Any(it => !it.HasValue)
+				? None
+				: Some(sequence.ConvertAll(it => it!.Value));
 
         public static T? AsNullable<T>(this MayBe<T> @this) where T : struct =>
             @this.HasValue ? @this.Value : null;
+
+        public static MayBe<Unit> SomeIf(bool hasValue) =>
+            new (hasValue ? Unit.Instance : default, hasValue);
     }
 
     internal sealed record MayBe<T>(T? Value, bool HasValue)

@@ -43,7 +43,8 @@ namespace Ginger.Tests.StepDefinitions
                 from r in patterns.GetMultilineRows()
                 select new GenerativePattern(r["Id"], r["Pattern"], ParseMeaning(r["Meaning"])),
                 _grammarParser,
-                _russianLexicon);
+                _russianLexicon,
+                CreateMeaningBuilder());
         }
 
         [When("these SUT entities are defined")]
@@ -74,7 +75,7 @@ namespace Ginger.Tests.StepDefinitions
                     where !understoodSentence
                             .Fold(
                                 _ => false,
-                                r => MeaningsAreEqual(expectedMeaning, r.Meaning) && 
+                                r => MeaningsAreEqual(expectedMeaning, GetMeaning(r)) && 
                                       situation.RecognizedWithPattern.Map(patternId => patternId == r.PatternId).OrElse(true))
                     select new 
                     { 
@@ -95,7 +96,7 @@ namespace Ginger.Tests.StepDefinitions
                 understoodSentence.Fold(
                     failures => $"Understanding failed:{Environment.NewLine}" + 
                                 Print(SelectAndOrderFailures(failures), Environment.NewLine),
-                    r => Print(r.Meaning));
+                    r => Print(GetMeaning(r)));
 
             static IEnumerable<string> SelectAndOrderFailures(IEnumerable<FailedUnderstandingAttempt> failedAttempts) =>
                 from failure in failedAttempts
@@ -115,7 +116,7 @@ namespace Ginger.Tests.StepDefinitions
                     {
                         Sentence = sentence,
                         understoodSentence.PatternId,
-                        Meaning = Print(understoodSentence.Meaning)
+                        Meaning = Print(GetMeaning(understoodSentence))
                     }
                 ).AsImmutable();
 
@@ -185,7 +186,8 @@ namespace Ginger.Tests.StepDefinitions
                         SentenceUnderstander.LoadFromPatterns(
                             new GenerativePattern[] { new ("unimportant", patternText, Left(Immutable.Empty<Rule>())) },
                             _grammarParser,
-                            _russianLexicon));
+                            _russianLexicon,
+                            CreateMeaningBuilder()));
                     return string.Empty;
                 }
                 catch (InvalidOperationException exception)
@@ -207,7 +209,7 @@ namespace Ginger.Tests.StepDefinitions
         internal SentenceUnderstander SentenceUnderstander
         {
             get => _scenarioContext.Get<SentenceUnderstander>();
-            set => _scenarioContext.Set(value);
+            private set => _scenarioContext.Set(value);
         }
 
         private SutSpecificationBuilder? SutDescriptionBuilder
@@ -217,7 +219,10 @@ namespace Ginger.Tests.StepDefinitions
         }
 
         private UnderstandingOutcome TryToUnderstand(string sentence) =>
-            SentenceUnderstander.Understand(_grammarParser.ParsePreservingQuotes(sentence));
+            SentenceUnderstander.Understand(_grammarParser.ParsePreservingQuotes(sentence), CreateMeaningBuilder());
+
+        private MeaningBuilder CreateMeaningBuilder() =>
+            MeaningBuilder.Create(TryToUnderstand);
 
         private static bool MeaningsAreEqual(SentenceMeaning expectedMeaning, SentenceMeaning actualMeaning) =>
             expectedMeaning.Fold(
@@ -229,6 +234,11 @@ namespace Ginger.Tests.StepDefinitions
                 "unimportant", 
                 generativePatternText, 
                 new SentenceMeaning(Array.Empty<Rule>(), default, IsLeft: true));
+
+        private static SentenceMeaning GetMeaning(UnderstoodSentence understoodSentence) =>
+            understoodSentence.MeaningWithRecipe.Map2(
+                rules => rules.ConvertAll(r => r.Rule),
+                statements => statements.ConvertAll(s => s.ComplexTerm));
 
         private readonly ScenarioContext _scenarioContext;
         private readonly IRussianGrammarParser _grammarParser;

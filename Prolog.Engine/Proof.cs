@@ -160,11 +160,11 @@ namespace Prolog.Engine
                     complexTerm.Arguments.Select(
                         argument => argument switch
                         {
-                            Variable v when v == _ => GenerateNewVariable(),
+                            Variable v when v == _ => Variable.MakeNew(),
                             Variable v when !usedNames.Contains(v.Name) => v,
                             Variable v => renamedVariables.TryGetValue(v.Name, out var renamedVariable)
                                     ? renamedVariable
-                                    : renamedVariables.AddAndReturnValue(v.Name, GenerateNewVariable()),
+                                    : renamedVariables.AddAndReturnValue(v.Name, Variable.MakeNew()),
                             ComplexTerm ct => 
                                     RenameVariablesToMakeThemDifferentFromAlreadyUsedNames(ct, usedNames, renamedVariables),
                             _ => argument
@@ -220,28 +220,24 @@ namespace Prolog.Engine
                 )
             });
 
-        private static Variable GenerateNewVariable() =>
-            new (Name: $"_{++_nextNewVariableIndex}", IsTemporary: true);
-
         private static IEnumerable<Rule> CheckProgramRules(IReadOnlyCollection<Rule> programRules) =>
             programRules
                 .Select(r => Builtin.TryResolveFunctor(r.Conclusion))
                 .Where(conclusion => conclusion != null)
-                .AsImmutable()
-                .Apply(invalidConclusions => !invalidConclusions.Any() 
-                    ? programRules
-                    : throw new InvalidOperationException(
-                        string.Join(
-                            Environment.NewLine, 
-                            from c in invalidConclusions
-                            select $"It's impossible to re-define built-in procedure '{c.Functor.Name}/{c.Functor.Arity}'")));
+                .AsImmutable() switch 
+                    { 
+                        var invalidConclusions when !invalidConclusions.Any() => programRules,
+                        var invalidConclusions => throw new InvalidOperationException(
+                            string.Join(
+                                Environment.NewLine, 
+                                from c in invalidConclusions
+                                select $"It's impossible to re-define built-in procedure '{c.Functor.Name}/{c.Functor.Arity}'")) 
+                    };
 
         private static T Trace<T>(this T @this, int nestingLevel, string? description = null)
         {
             ProofEvent?.Invoke(description, nestingLevel, @this!);
             return @this;
         }
-
-        private static int _nextNewVariableIndex;
     }
 }

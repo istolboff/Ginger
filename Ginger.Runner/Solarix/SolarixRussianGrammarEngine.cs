@@ -245,7 +245,7 @@ namespace Ginger.Runner.Solarix
                 .OrElse(() => throw new InvalidOperationException($"Could not find plural form for {lemmaVersion}"));
 
             (int CoordinateId, int StateId)[] GetProjectionCharacteristics(IntPtr hProjs, int i) =>
-                lemmaState
+                lemmaState!
                     .Select(it => (it.CoordinateId, GrammarEngine.sol_GetProjCoordState(_engineHandle, hProjs, i, it.CoordinateId)))
                     .ToArray();
         }
@@ -312,7 +312,7 @@ namespace Ginger.Runner.Solarix
             return new SentenceElement(
                 Content: content,
                 LeafLinkType: leafType == null || leafType.Value < 0 ? null : (LinkType)leafType.Value,
-                LemmaVersions: lemmaVersions.Distinct().AsImmutable(), 
+                LemmaVersions: new StructuralEquatableArray<LemmaVersion>(lemmaVersions.Distinct()), 
                 Children: children.AsImmutable(),
                 PositionInSentence: position);
         }

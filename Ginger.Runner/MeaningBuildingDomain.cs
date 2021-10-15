@@ -8,129 +8,98 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Ginger.Runner
 {
-    using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
-    using FunctorBuildingRecipe = Either<FunctorBase /* BuiltIn Functor */, (NameBuilingRecipe FunctorNameBuildingRecipe, int Arity) /* Regular Functor building recipe */>;
-    using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuilingRecipe>, IReadOnlyCollection<ComplexTermBuilingRecipe>>;
+    using MeaningWithRecipe = Either<IReadOnlyCollection<RuleWithRecipe>, IReadOnlyCollection<ComplexTermWithRecipe>>;
+    using FunctorBuildingRecipe = Either<FunctorBase /* BuiltIn Functor */, (NameBuildingRecipe FunctorNameBuildingRecipe, int Arity) /* Regular Functor building recipe */>;
+    using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuildingRecipe>, IReadOnlyCollection<ComplexTermBuildingRecipe>>;
+    using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
 
     using static DomainApi;
     using static Either;
     using static Impl;
     using static MayBe;
-    using static MeaningMetaModifiers;
 
-    internal sealed record RuleBuilingRecipe(
-        ComplexTermBuilingRecipe ConclusionBuildingRecipe, 
-        IReadOnlyCollection<ComplexTermBuilingRecipe> PremiseBuildingRecipies);
+    internal sealed record RuleBuildingRecipe(
+        ComplexTermBuildingRecipe ConclusionBuildingRecipe, 
+        IReadOnlyCollection<ComplexTermBuildingRecipe> PremiseBuildingRecipies);
 
-    internal sealed record ComplexTermBuilingRecipe(
-        Either<RegularComplexTermBuilingRecipe, UnderstanderBuilingRecipe> ConcreteBuilder) 
-        : TermBuilingRecipe;
+    internal sealed record ComplexTermBuildingRecipe(
+        Either<RegularComplexTermBuildingRecipe, UnderstanderBuildingRecipe> ConcreteBuilder) 
+        : TermBuildingRecipe
+    {
+        public MayBe<NameBuildingRecipe> FunctorNameRecipe => 
+            ConcreteBuilder.Fold(
+                regularBuilder => regularBuilder.FunctorBuildingRecipe.Fold(
+                    _ => None, functorRecipe => Some(functorRecipe.FunctorNameBuildingRecipe)),
+                _ => None);
+    }
 
-    internal sealed record RegularComplexTermBuilingRecipe(
+    internal sealed record RegularComplexTermBuildingRecipe(
         FunctorBuildingRecipe FunctorBuildingRecipe, 
-        IReadOnlyCollection<TermBuilingRecipe> ArgumentBuildingRecipies);
+        IReadOnlyCollection<TermBuildingRecipe> ArgumentBuildingRecipies);
 
-    internal sealed record UnderstanderBuilingRecipe(NameBuilingRecipe QuoteLocator);
+    internal sealed record UnderstanderBuildingRecipe(NameComponentBuildingRecipe QuoteLocator);
 
-    internal abstract record TermBuilingRecipe;
+    internal abstract record TermBuildingRecipe;
 
-    internal sealed record AtomBuilingRecipe(NameBuilingRecipe AtomContentBuilder) : TermBuilingRecipe;
+    internal sealed record AtomBuildingRecipe(NameBuildingRecipe AtomContentBuilder) : TermBuildingRecipe;
 
-    internal sealed record NumberBuilingRecipe(NameBuilingRecipe NumberTextRepresentationBuilder) : TermBuilingRecipe;
+    internal sealed record NumberBuildingRecipe(NameBuildingRecipe NumberTextRepresentationBuilder) : TermBuildingRecipe;
 
-    internal sealed record VariableBuilingRecipe(NameBuilingRecipe VariableNameBuilder) : TermBuilingRecipe;
+    internal sealed record VariableBuildingRecipe(NameBuildingRecipe VariableNameBuilder) : TermBuildingRecipe;
 
-    internal sealed record NameBuilingRecipe(
-        IReadOnlyCollection<Func<ParsedSentence, string>> NameComponentGetters,
-        bool CapitalizeFirstWord);
+    internal sealed record NameBuildingRecipe(
+        IReadOnlyCollection<NameComponentBuildingRecipe> NameComponentGetters,
+        bool CapitalizeFirstWord)
+    {
+        public MayBe<WordOrQuotation<DisambiguatedWord>> TryLocateCompleteSubTreeOfNameElements(ParsedSentence sentence) =>
+            from wordPositions in LiftOptionality(NameComponentGetters.ConvertAll(componentRecipe => componentRecipe.PositionInSentence))
+            from subTree in sentence.TryLocateCompleteSubTreeOfSentenceElements(wordPositions)
+            from mappedSubTree in subTree.TryMap((element, word) =>
+                from nameComponent in NameComponentGetters.TryFirst(it => 
+                        it.PositionInSentence == element.PositionInSentence && 
+                        it.DisambiguatedLemmaVersion.HasValue)
+                from patternLemmaVersion in nameComponent.DisambiguatedLemmaVersion
+                from disambiguatedLemma in word.LemmaVersions.TryFindRelevantLemma(patternLemmaVersion)
+                select new DisambiguatedWord(disambiguatedLemma, false, word.LeafLinkType))
+            select mappedSubTree;
+    }
+
+    internal sealed record NameComponentBuildingRecipe(
+        int? PositionInSentence,
+        MayBe<LemmaVersion> DisambiguatedLemmaVersion,
+        Func<ParsedSentence, string> ComponentGetter);
 
     internal sealed record MeaningBuilder(
-            SentenceUnderstander SentenceUnderstander,
-            IRussianGrammarParser GrammarParser,
-            Func<MeaningBuilder, RuleBuilingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, Rule>> BuildRule,
-            Func<MeaningBuilder, ComplexTermBuilingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, ComplexTerm>> BuildComplexTerm,
-            Func<MeaningBuilder, AtomBuilingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, Atom>> BuildAtom,
-            Func<MeaningBuilder, NumberBuilingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, Prolog.Engine.Number>> BuildNumber,
-            Func<MeaningBuilder, VariableBuilingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, Variable>> BuildVariable,
+            Func<MeaningBuilder, MeaningBuildingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, MeaningWithRecipe>> BuildMeaning,
+            Func<MeaningBuilder, IReadOnlyCollection<RuleBuildingRecipe>, ParsedSentence, Either<FailedUnderstandingAttempt, IReadOnlyCollection<RuleWithRecipe>>> BuildAllMeaningRules,
+            Func<MeaningBuilder, IReadOnlyCollection<ComplexTermBuildingRecipe>, ParsedSentence, Either<FailedUnderstandingAttempt, IReadOnlyCollection<ComplexTermWithRecipe>>> BuildAllMeaningStatements,
+            Func<MeaningBuilder, RuleBuildingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, Rule>> BuildRule,
+            Func<MeaningBuilder, ComplexTermBuildingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, ComplexTerm>> BuildComplexTerm,
+            Func<MeaningBuilder, AtomBuildingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, Term>> BuildAtom,
+            Func<MeaningBuilder, NumberBuildingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, Term>> BuildNumber,
+            Func<MeaningBuilder, VariableBuildingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, Term>> BuildVariable,
             Func<MeaningBuilder, FunctorBuildingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, FunctorBase>> BuildFunctor,
-            Func<MeaningBuilder, NameBuilingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, string>> BuildName)
+            Func<MeaningBuilder, NameBuildingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, string>> BuildName)
     {
-        public Either<FailedUnderstandingAttempt, SentenceMeaning> BuildMeaning(MeaningBuildingRecipe meaningBuildingRecipe, ParsedSentence sentence) 
+        public static MeaningBuilder Create(Func<string, UnderstandingOutcome> understandSentence)
         =>
-            LiftFailures(
-                meaningBuildingRecipe
-                    .Map2(
-                        ruleRecipes => GatherBuiltElements(ruleRecipes.ConvertAll(recipe => BuildRule(this, recipe, sentence))),
-                        statementRecipes => GatherBuiltElements(statementRecipes.ConvertAll(recipe => BuildComplexTerm(this, recipe, sentence)))));
+            MetaUnderstand.Enrich(
+                MetaVariable.Enrich(
+                    MetaCall.Enrich(
+                        new MeaningBuilder(
+                            BuildMeaningCore,
+                            BuildAllMeaningRulesCore, 
+                            BuildAllMeaningStatementsCore, 
+                            BuildRuleCore, 
+                            BuildComplexTermCore, 
+                            BuildAtomCore, 
+                            BuildNumberCore, 
+                            BuildVariableCore, 
+                            BuildFunctorCore, 
+                            BuildNameCore))),
+                    understandSentence);
 
-        public static MeaningBuilder Create(
-            SentenceUnderstander sentenceUnderstander, 
-            IRussianGrammarParser grammarParser) 
-        =>
-            new (sentenceUnderstander, grammarParser, BuildRuleCore, BuildComplexTermCore, BuildAtomCore, BuildNumberCore, BuildVariableCore, BuildFunctorCore, BuildNameCore);
-
-        private static Either<FailedUnderstandingAttempt, Rule> BuildRuleCore(MeaningBuilder @this, RuleBuilingRecipe recipe, ParsedSentence sentence) 
-        =>
-            from conclusion in @this.BuildComplexTerm(@this, recipe.ConclusionBuildingRecipe, sentence)
-            from premises in GatherBuiltElements(recipe.PremiseBuildingRecipies.ConvertAll(r => @this.BuildComplexTerm(@this, r, sentence)))
-            select Rule(conclusion, premises);
-
-        private static Either<FailedUnderstandingAttempt, ComplexTerm> BuildComplexTermCore(MeaningBuilder @this, ComplexTermBuilingRecipe recipe, ParsedSentence sentence) 
-        =>
-            recipe.ConcreteBuilder.Fold(
-                regularRecipe => 
-                    from functor in @this.BuildFunctor(@this, regularRecipe.FunctorBuildingRecipe, sentence)
-                    from arguments in GatherBuiltElements(regularRecipe.ArgumentBuildingRecipies.ConvertAll(r => Build(@this, r, sentence)))
-                    select AccomodateInlinedArguments(functor, arguments),
-                understanderRecipe => 
-                    from quote in @this.BuildName(@this, understanderRecipe.QuoteLocator, sentence)
-                    from understanding in MeaningMetaModifiers.BuildUnderstanding(
-                                            quote, 
-                                            @this.GrammarParser, 
-                                            @this.SentenceUnderstander)
-                    select understanding);
-
-        private static Either<FailedUnderstandingAttempt, Term> Build(MeaningBuilder @this, TermBuilingRecipe recipe, ParsedSentence sentence) =>
-            recipe switch
-            {
-                AtomBuilingRecipe atomRecipe => @this.BuildAtom(@this, atomRecipe, sentence).Map(t => t as Term),
-                NumberBuilingRecipe numberRecipe => @this.BuildNumber(@this, numberRecipe, sentence).Map(t => t as Term),
-                VariableBuilingRecipe variableRecipe => @this.BuildVariable(@this, variableRecipe, sentence).Map(t => t as Term),
-                ComplexTermBuilingRecipe complexTermRecipe => @this.BuildComplexTerm(@this, complexTermRecipe, sentence).Map(t => t as Term),
-                _ => throw ProgramLogic.Error($"no code provided to build Term from {recipe.GetType().Name}")
-            };
-
-        private static Either<FailedUnderstandingAttempt, Atom> BuildAtomCore(MeaningBuilder @this, AtomBuilingRecipe recipe, ParsedSentence sentence) =>
-            @this.BuildName(@this, recipe.AtomContentBuilder, sentence).Map(Atom);
-
-        private static Either<FailedUnderstandingAttempt, Prolog.Engine.Number> BuildNumberCore(MeaningBuilder @this, NumberBuilingRecipe recipe, ParsedSentence sentence) =>
-            @this.BuildName(@this, recipe.NumberTextRepresentationBuilder, sentence).Map(numberRepresentation => Number(int.Parse(numberRepresentation, CultureInfo.CurrentCulture)));
-
-        private static Either<FailedUnderstandingAttempt, Variable> BuildVariableCore(MeaningBuilder @this, VariableBuilingRecipe recipe, ParsedSentence sentence) =>
-            @this.BuildName(@this, recipe.VariableNameBuilder, sentence).Map(Variable);
-
-        private static Either<FailedUnderstandingAttempt, FunctorBase> BuildFunctorCore(MeaningBuilder @this, FunctorBuildingRecipe recipe, ParsedSentence sentence) =>
-            recipe.Fold(
-                builtInFinctor => Right(builtInFinctor),
-                functorRecipe => @this
-                                    .BuildName(@this, functorRecipe.FunctorNameBuildingRecipe, sentence)
-                                    .Map(name => Functor(name, functorRecipe.Arity))
-                                    .Map(f => f as FunctorBase));
-
-        private static Either<FailedUnderstandingAttempt, string> BuildNameCore(MeaningBuilder @this, NameBuilingRecipe recipe, ParsedSentence sentence) =>
-            recipe.NameComponentGetters.Count switch
-            {
-                0 => Left(new FailedUnderstandingAttempt(None, new EmptyNameBuilder())),
-                1 => Right(recipe.NameComponentGetters.Single().Invoke(sentence)),
-                _ => Right(string.Join(
-                        string.Empty, 
-                        recipe.NameComponentGetters.Select((wl, i) => 
-                            i == 0 && !recipe.CapitalizeFirstWord
-                                ? wl.Invoke(sentence)
-                                : Russian.TextInfo.ToTitleCase(wl.Invoke(sentence)))))
-            };
-
-        private static Either<FailedUnderstandingAttempt, IReadOnlyCollection<T>> GatherBuiltElements<T>(
+        public static Either<FailedUnderstandingAttempt, IReadOnlyCollection<T>> GatherBuiltElements<T>(
             IReadOnlyCollection<Either<FailedUnderstandingAttempt, T>> elements)
         =>
             elements.Where(e => e.IsLeft).Select(e => e.Left!.FailureReason).AsImmutable() switch
@@ -143,11 +112,106 @@ namespace Ginger.Runner
                 _ => Right(elements.ConvertAll(e => e.Right!))
             };
 
-        private static Either<FailedUnderstandingAttempt, Either<IReadOnlyCollection<TLeft>, IReadOnlyCollection<TRight>>> LiftFailures<TLeft, TRight>(
+        public static Either<FailedUnderstandingAttempt, Either<IReadOnlyCollection<TLeft>, IReadOnlyCollection<TRight>>> LiftFailures<TLeft, TRight>(
             Either<Either<FailedUnderstandingAttempt, IReadOnlyCollection<TLeft>>, Either<FailedUnderstandingAttempt, IReadOnlyCollection<TRight>>> outcome)
         =>
             outcome.Fold(
-                left => left.Map(leftItems => Left<IReadOnlyCollection<TLeft>, IReadOnlyCollection<TRight>>(leftItems)),
-                right => right.Map(rightItems => Right<IReadOnlyCollection<TLeft>, IReadOnlyCollection<TRight>>(rightItems)));
+                left => left.Map(Left<IReadOnlyCollection<TLeft>, IReadOnlyCollection<TRight>>),
+                right => right.Map(Right<IReadOnlyCollection<TLeft>, IReadOnlyCollection<TRight>>));
+
+        private static Either<FailedUnderstandingAttempt, MeaningWithRecipe> BuildMeaningCore(
+            MeaningBuilder @this, 
+            MeaningBuildingRecipe meaningBuildingRecipe, 
+            ParsedSentence sentence) 
+        =>
+            LiftFailures(
+                meaningBuildingRecipe.Map2(
+                ruleRecipes => @this.BuildAllMeaningRules(@this, ruleRecipes, sentence),
+                statementRecipes => @this.BuildAllMeaningStatements(@this, statementRecipes, sentence)));
+
+        private static Either<FailedUnderstandingAttempt, IReadOnlyCollection<RuleWithRecipe>> BuildAllMeaningRulesCore(
+            MeaningBuilder @this, 
+            IReadOnlyCollection<RuleBuildingRecipe> ruleRecipes,
+            ParsedSentence sentence) 
+        => 
+        GatherBuiltElements(
+          ruleRecipes.ConvertAll(recipe => 
+             @this.BuildRule(@this, recipe, sentence)
+             .Map(rule => new RuleWithRecipe(rule, recipe))));
+
+        private static Either<FailedUnderstandingAttempt, IReadOnlyCollection<ComplexTermWithRecipe>> BuildAllMeaningStatementsCore(
+            MeaningBuilder @this, 
+            IReadOnlyCollection<ComplexTermBuildingRecipe> statementRecipes, 
+            ParsedSentence sentence)
+        =>
+         GatherBuiltElements(
+              statementRecipes.ConvertAll(recipe => 
+                 @this.BuildComplexTerm(@this, recipe, sentence)
+                 .Map(complexTerm => new ComplexTermWithRecipe(complexTerm, Some(recipe)))));
+
+        private static Either<FailedUnderstandingAttempt, Rule> BuildRuleCore(MeaningBuilder @this, RuleBuildingRecipe recipe, ParsedSentence sentence) 
+        =>
+            from conclusion in @this.BuildComplexTerm(@this, recipe.ConclusionBuildingRecipe, sentence)
+            from premises in GatherBuiltElements(recipe.PremiseBuildingRecipies.ConvertAll(r => @this.BuildComplexTerm(@this, r, sentence)))
+            select Rule(conclusion, premises);
+
+        private static Either<FailedUnderstandingAttempt, ComplexTerm> BuildComplexTermCore(
+            MeaningBuilder @this, 
+            ComplexTermBuildingRecipe recipe, 
+            ParsedSentence sentence) 
+        =>
+            recipe.ConcreteBuilder.Fold(
+                regularRecipe => 
+                    from functor in @this.BuildFunctor(@this, regularRecipe.FunctorBuildingRecipe, sentence)
+                    from arguments in GatherBuiltElements(regularRecipe.ArgumentBuildingRecipies.ConvertAll(r => Build(@this, r, sentence)))
+                    select ComplexTerm(functor, arguments),
+                understanderRecipe => 
+                    @this
+                        .BuildName(@this, new (understanderRecipe.QuoteLocator.ToImmutable(), false), sentence)
+                        .Map(quote => ComplexTerm(Functor(MetaUnderstand.Name, 1), Atom(quote))));
+
+        private static Either<FailedUnderstandingAttempt, Term> Build(
+            MeaningBuilder @this, 
+            TermBuildingRecipe recipe, 
+            ParsedSentence sentence) 
+        =>
+            recipe switch
+            {
+                AtomBuildingRecipe atomRecipe => @this.BuildAtom(@this, atomRecipe, sentence),
+                NumberBuildingRecipe numberRecipe => @this.BuildNumber(@this, numberRecipe, sentence),
+                VariableBuildingRecipe variableRecipe => @this.BuildVariable(@this, variableRecipe, sentence),
+                ComplexTermBuildingRecipe complexTermRecipe => @this.BuildComplexTerm(@this, complexTermRecipe, sentence).Map(t => t as Term),
+                _ => throw ProgramLogic.Error($"no code provided to build Term from {recipe.GetType().Name}")
+            };
+
+        private static Either<FailedUnderstandingAttempt, Term> BuildAtomCore(MeaningBuilder @this, AtomBuildingRecipe recipe, ParsedSentence sentence) =>
+            @this.BuildName(@this, recipe.AtomContentBuilder, sentence).Map(it => Atom(it) as Term);
+
+        private static Either<FailedUnderstandingAttempt, Term> BuildNumberCore(MeaningBuilder @this, NumberBuildingRecipe recipe, ParsedSentence sentence) =>
+            @this.BuildName(@this, recipe.NumberTextRepresentationBuilder, sentence).Map(numberRepresentation => Number(int.Parse(numberRepresentation, CultureInfo.CurrentCulture)) as Term);
+
+        private static Either<FailedUnderstandingAttempt, Term> BuildVariableCore(MeaningBuilder @this, VariableBuildingRecipe recipe, ParsedSentence sentence) =>
+            @this.BuildName(@this, recipe.VariableNameBuilder, sentence).Map(it => Variable(it) as Term);
+
+        private static Either<FailedUnderstandingAttempt, FunctorBase> BuildFunctorCore(MeaningBuilder @this, FunctorBuildingRecipe recipe, ParsedSentence sentence) =>
+            recipe.Fold(
+                builtInFinctor => Right(builtInFinctor),
+                functorRecipe => @this
+                                    .BuildName(@this, functorRecipe.FunctorNameBuildingRecipe, sentence)
+                                    .Map(name => Functor(name, functorRecipe.Arity))
+                                    .Map(f => f as FunctorBase));
+
+        private static Either<FailedUnderstandingAttempt, string> BuildNameCore(MeaningBuilder @this, NameBuildingRecipe recipe, ParsedSentence sentence) =>
+            recipe.NameComponentGetters.Count switch
+            {
+                0 => Left(new FailedUnderstandingAttempt(None, new EmptyNameBuilder())),
+                1 => Right(recipe.NameComponentGetters.Single().ComponentGetter(sentence)),
+                _ => Right(string.Join(
+                        string.Empty, 
+                        recipe.NameComponentGetters.Select((wl, i) => 
+                            i == 0 && !recipe.CapitalizeFirstWord
+                                ? wl.ComponentGetter(sentence)
+                                : Russian.TextInfo.ToTitleCase(wl.ComponentGetter(sentence)))))
+            };
     }
 }

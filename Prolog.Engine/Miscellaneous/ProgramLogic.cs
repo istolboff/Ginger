@@ -8,6 +8,9 @@ namespace Prolog.Engine.Miscellaneous
         public static InvalidOperationException Error(string message) =>
             new ("Program Logic Error: " + message);
 
+        public static Exception ThisSwitchPathSeemsToBeUnreachable => 
+            Error("This switch path appeared to be unreachable when writing the code, yet it actually is reachable afetr all.");
+
         [AssertionMethod]
         public static void Check(bool condition, string message)
         {

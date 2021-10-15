@@ -14,6 +14,7 @@ void Main()
 						Text = lines[i * 2], 
 						ParsingResult = JsonConvert.SerializeObject(JsonConvert.DeserializeObject<IReadOnlyCollection<SentenceElement>>(lines[i * 2 + 1]))
 					})
+		.OrderBy(it => it.Text)
 		.Dump();
 }
 

@@ -11,7 +11,10 @@ namespace Prolog.Engine
 
     internal static class PrettyPrinting
     {
-        public static string Print<T>(T @this, string enumSeparator = "; ") =>
+        public static string Print<T>(
+            T @this, 
+            string enumSeparator = "; ",
+            params syntacticshugar_CustomPrinter[] customPrinters) =>
             @this switch
             {
                 Atom atom => atom.Characters,
@@ -28,8 +31,19 @@ namespace Prolog.Engine
                 ValueTuple<Term, Term> unification => $"({Print(unification.Item1)}, {Print(unification.Item2)})",
                 Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>> sentenceMeaning => sentenceMeaning.Fold(rules => Print(rules), statements => Print(statements)),
                 string text => text,
-                IEnumerable collection => string.Join(enumSeparator, collection.Cast<object>().Select(it => Print(it, enumSeparator))),
+                IEnumerable collection => string.Join(enumSeparator, collection.Cast<object>().Select(it => Print(it, enumSeparator, customPrinters))),
+                _ when customPrinters.FirstOrDefault(cp => cp.ArgumentType.IsAssignableFrom(@this?.GetType() ?? typeof(Unit))) is var customPrinter && customPrinter != null =>
+                    Print(customPrinter.Delegate.DynamicInvoke(@this)),
                 _ => @this?.ToString() ?? "NULL"
             };
+
+        public static syntacticshugar_CustomPrinter CustomPrinter<T>(Func<T, string> f) => 
+            new (typeof(T), f);
     }
+
+#pragma warning disable CA1707 // Remove the underscores from type name
+// ReSharper disable InconsistentNaming
+    internal sealed record syntacticshugar_CustomPrinter(Type ArgumentType, Delegate Delegate);
+// ReSharper restore InconsistentNaming    
+#pragma warning restore CA1707
 }

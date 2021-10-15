@@ -8,6 +8,9 @@ using Ginger.Runner.Solarix;
 
 namespace Ginger.Runner
 {
+    using static MayBe;
+    using static TextManipulation;
+
     internal sealed record WordOrQuotation<TWord>(
         string Content,
         MayBe<TWord> Word, // None in case of Quotation -- see RussianGrammarTreatingQuotedSequencesAsSingleSentenceElement.cs
@@ -25,6 +28,13 @@ namespace Ginger.Runner
         public IEnumerable<TWord> IterateWordsDepthFirst() =>
             IterateDepthFirst().Where(it => it.Word.HasValue).Select(it => it.Word.Value!);
 
+        public WordOrQuotation<TWord> Transform(Func<WordOrQuotation<TWord>, WordOrQuotation<TWord>> f) =>
+            f(new (
+                Content,
+                Word,
+                Children.ConvertAll(child => child.Transform(f)),
+                PositionInSentence));
+
         public WordOrQuotation<TMappedWord> Map<TMappedWord>(Func<WordOrQuotation<TWord>, TWord, TMappedWord> f) =>
             new (
                 Content,
@@ -34,6 +44,30 @@ namespace Ginger.Runner
 
         public WordOrQuotation<TMappedWord> Map<TMappedWord>(Func<TWord, TMappedWord> f) =>
             Map((_, w) => f(w));
+
+        public MayBe<WordOrQuotation<TMappedWord>> TryMap<TMappedWord>(
+            Func<WordOrQuotation<TWord>, TWord, MayBe<TMappedWord>> f) 
+        =>
+            from w in Some(new { MappedWord = Word.Map(w => f(this, w)) })
+            from mappedChildren in LiftOptionality(Children.ConvertAll(child => child.TryMap(f)))
+            select new WordOrQuotation<TMappedWord>(Content, w.MappedWord, mappedChildren, PositionInSentence);
+
+        public MayBe<WordOrQuotation<TWord>> TryFindTopMostWord(ICollection<int> elementPositions) => 
+            Iterate(0)
+                .Where(it => elementPositions.Contains(it.Element.PositionInSentence))
+                .Aggregate(
+                    new { TopmostLevel = int.MaxValue, TopmostElement = MakeNone<WordOrQuotation<TWord>>() },
+                    (accumulator, elementWithLevel) => 
+                        elementWithLevel.LevelInTree switch
+                        {
+                            var i when i < accumulator.TopmostLevel => new { TopmostLevel = i, TopmostElement = Some(elementWithLevel.Element) },
+                            var i when i == accumulator.TopmostLevel => new { TopmostLevel = i, TopmostElement = MakeNone<WordOrQuotation<TWord>>() },
+                            _ => accumulator
+                        })
+                .TopmostElement;
+
+        private IEnumerable<(WordOrQuotation<TWord> Element, int LevelInTree)> Iterate(int currentLevel) =>
+            (this, currentLevel).ToImmutable().Concat(Children.SelectMany(it => it.Iterate(currentLevel + 1)));
     }
 
     internal sealed record Word(IReadOnlyCollection<LemmaVersion> LemmaVersions, LinkType? LeafLinkType);
@@ -53,7 +87,7 @@ namespace Ginger.Runner
                             $"{Sentence} does not have a word at position={positionInSentence}. " + 
                             "We expected to see word at this position, but it's either quotation, or there's no element at this index at all."))
                 .Word.Value!.LemmaVersions
-                .FindRelevantLemma(lemmaVersion)
+                .TryFindRelevantLemma(lemmaVersion)
                 .OrElse(() => throw reportException(
                                 $"Could not find {lemmaVersion.PartOfSpeech} lemma version " +
                                 $"of type {lemmaVersion.Characteristics.GetType().Name} " +
@@ -111,6 +145,18 @@ namespace Ginger.Runner
                 .StringBuilder.ToString();
             return grammarParser.ParsePreservingQuotes(adjustedSentenceText);
         }
+
+        public MayBe<WordOrQuotation<Word>> TryLocateCompleteSubTreeOfSentenceElements(IReadOnlyCollection<int> wordPositions) =>
+            from topmostWord in SentenceStructure.TryFindTopMostWord(wordPositions.ToHashSet())
+            from _ in SomeIf(topmostWord.IterateByPosition().Select(w => w.PositionInSentence).SequenceEqual(wordPositions.OrderBy(i => i)))
+            select topmostWord;
+
+        public static ParsedSentence From(WordOrQuotation<Word> structure) =>
+            new (
+                Join(
+                    (_, it) => it.All(char.IsPunctuation) ? string.Empty : " ", 
+                    structure.IterateByPosition().Select(it => it.IsQuote ? $"'{it.Content}'" : it.Content)),
+                structure);
     }
 
     internal sealed record AnnotatedWord(
@@ -200,7 +246,7 @@ namespace Ginger.Runner
                                     russianLexicon,
                                     enforceLemmaVersions,
                                     message => new InvalidOperationException($"Sentence '{Sentence}': {message}")),
-                                word.Annotations.IsFixed,
+                                word.Annotations.IsFixed || word.Content.All(char.IsPunctuation),
                                 word.LeafLinkType);
                 }));
 
@@ -325,7 +371,7 @@ namespace Ginger.Runner
                 _ => throw ProgramLogic.Error($"Do not know how to handle {@this}")
             };
 
-        public static MayBe<LemmaVersion> FindRelevantLemma(
+        public static MayBe<LemmaVersion> TryFindRelevantLemma(
             this IEnumerable<LemmaVersion> lemmaVersions,
             LemmaVersion targetLemmaVersion) =>
                 lemmaVersions.TryFirst(lm => 
