@@ -11,7 +11,9 @@ using Prolog.Engine;
 namespace Ginger.Runner
 {
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
+    using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
     
+    using static Either;
     using static MakeCompilerHappy;
     using static MayBe;
     using static MonadicParsing;
@@ -30,7 +32,7 @@ namespace Ginger.Runner
             _grammarParser = russianGrammarParser;
         }
 
-        public MayBe<UnderstoodSentence> Understand(ParsedSentence sentence) =>
+        public UnderstandingOutcome Understand(ParsedSentence sentence) =>
             Understand(sentence, _phraseTypeUnderstanders);
 
         public static SentenceUnderstander LoadFromEmbeddedResources(
@@ -60,12 +62,12 @@ namespace Ginger.Runner
                     from it in concretePatterns
                     let pattern = it.PatternWithMeaning.Pattern
                     let understanding = result.Understand(pattern.AsParsedSentence(), concreteUnderstanders)
-                    where understanding.HasValue
+                    where understanding.IsRight
                     select new
                     { 
                         Pattern = pattern, 
                         NewPatternId = generativePattern.PatternId, 
-                        ExistingPatternId = understanding.Value!.PatternId 
+                        ExistingPatternId = understanding.Right!.PatternId 
                     }
                 ).AsImmutable();
 
@@ -92,24 +94,33 @@ namespace Ginger.Runner
             return result;
         }
 
-        private MayBe<UnderstoodSentence> Understand(
+        private UnderstandingOutcome Understand(
             ParsedSentence sentence, 
             IEnumerable<ConcreteUnderstander> phraseTypeUnderstanders) 
         =>
             phraseTypeUnderstanders
                 .Select(phraseTypeUnderstander => phraseTypeUnderstander.Understand(sentence, MeaningBuilder.Create(this, _grammarParser)))
-                .Where(result => result.HasValue)
-                .Select(result => result.Value)
                 .AggregateWhile(
-                    MakeNone<(UnderstoodSentence UnderstoodSentence, int UnderstandingConfidenceLevel)>(),
-                    (bestUnderstandingSoFar, currentUnderstanding) =>
-                        !bestUnderstandingSoFar.HasValue || 
-                        bestUnderstandingSoFar.Value.UnderstandingConfidenceLevel > 
-                        currentUnderstanding.UnderstandingConfidenceLevel
-                            ? Some(currentUnderstanding)
-                            : bestUnderstandingSoFar,
-                    bestUnderstandingSoFar => bestUnderstandingSoFar.Map(v => v.UnderstandingConfidenceLevel != 0).OrElse(true))
-                .Map(result => result.UnderstoodSentence);
+                    (Failures: new List<FailedUnderstandingAttempt>(), UnderstandingResult: MakeNone<UnderstandingResult>()),
+                    (state, understandingAttemptOutcome) =>
+                        understandingAttemptOutcome switch
+                        {
+                            (_, var understandingResult, false) =>
+                                (
+                                    state.Failures,
+                                    state.UnderstandingResult.Map(v => v.UnderstandingConfidenceLevel).OrElse(int.MaxValue) > understandingResult!.UnderstandingConfidenceLevel
+                                        ? Some(understandingResult)
+                                        : state.UnderstandingResult
+                                ),
+                            (var failedUnderstandingAttempt, _, true) => 
+                                (state.Failures.AddAndReturnSelf(failedUnderstandingAttempt!), state.UnderstandingResult)
+                        },
+                    state => state.UnderstandingResult.Map(v => v.UnderstandingConfidenceLevel).OrElse(int.MaxValue) != 0)
+                switch
+                {
+                    (var failedAttempts, (_, false)) => Left(failedAttempts as IReadOnlyCollection<FailedUnderstandingAttempt>),
+                    (_, (var result, true)) => Right(result!.UnderstoodSentence)
+                };
 
         private static TextInput ReadEmbeddedResource(string name)
         {

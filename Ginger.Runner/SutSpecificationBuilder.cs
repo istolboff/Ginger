@@ -11,6 +11,7 @@ namespace Ginger.Runner
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
     
     using static DomainApi;
+    using static PrettyPrinting;
 
     internal sealed class SutSpecificationBuilder
     {
@@ -176,8 +177,17 @@ namespace Ginger.Runner
         private SentenceMeaning Understand(string phrasing) =>
             _sentenceUnderstander
                 .Understand(_grammarParser.ParsePreservingQuotes(phrasing))
-                .OrElse(() => throw new InvalidOperationException($"Could not understand the phrase {phrasing}"))
-                .Meaning;
+                .Fold(
+                    failedUnderstandingAttempts => throw UnderstandingFailed(phrasing, failedUnderstandingAttempts),
+                    understoodSentence => understoodSentence.Meaning);
+
+        private static InvalidOperationException UnderstandingFailed(
+            string phrasing, 
+            IReadOnlyCollection<FailedUnderstandingAttempt> failedUnderstandingAttempts)
+        {
+            return new InvalidOperationException(
+                $"Could not understand the phrase {phrasing}:{Environment.NewLine}{Print(failedUnderstandingAttempts, Environment.NewLine)}");
+        }
 
         private static bool IsVariableEqualityCheck(ComplexTerm complexTerm) =>
             Builtin.BinaryOperators.Keys.Contains(complexTerm.Functor.Name) &&

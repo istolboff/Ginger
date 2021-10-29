@@ -11,14 +11,15 @@ using Ginger.Runner.Solarix;
 
 namespace Ginger.Tests.StepDefinitions
 {
+    using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
+    using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
+
     using static Either;
     using static MakeCompilerHappy;
     using static MonadicParsing;
     using static TextParsingPrimitives;
     using static PrettyPrinting;
     using static PrologParser;
-
-    using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
 
     [Binding]
 #pragma warning disable CA1812 // Your class is an internal class that is apparently never instantiated on Derived class
@@ -71,16 +72,17 @@ namespace Ginger.Tests.StepDefinitions
                     let expectedMeaning = ParseMeaning(situation.ExpectedMeaning)
                     let understoodSentence = TryToUnderstand(situation.Sentence)
                     where !understoodSentence
-                            .Map(r => MeaningsAreEqual(expectedMeaning, r.Meaning) && 
+                            .Fold(
+                                _ => false,
+                                r => MeaningsAreEqual(expectedMeaning, r.Meaning) && 
                                       situation.RecognizedWithPattern.Map(patternId => patternId == r.PatternId).OrElse(true))
-                            .OrElse(false)
                     select new 
                     { 
-                        situation.Sentence, 
+                        situation.Sentence,
                         ExpectedMeaning = Print(expectedMeaning),
-                        ActualMeaning = understoodSentence.Map(r => Print(r.Meaning)).OrElse("Understanding failed"),
+                        ActualMeaning = PrintUnderstoodSentence(understoodSentence),
                         ExpectedPatternId = situation.RecognizedWithPattern,
-                        ActualPatternId = understoodSentence.Map(r => r.PatternId).OrElse("n/a")
+                        ActualPatternId = understoodSentence.Fold(_ => "n/a", r => r.PatternId)
                     }
                 ).AsImmutable();
 
@@ -88,6 +90,17 @@ namespace Ginger.Tests.StepDefinitions
                 wrongUnderstandings.Any(),
                 "The following sentences were processed incorrectly:" + Environment.NewLine + 
                 string.Join(Environment.NewLine, wrongUnderstandings));
+
+            static string PrintUnderstoodSentence(UnderstandingOutcome understoodSentence) =>
+                understoodSentence.Fold(
+                    failures => $"Understanding failed:{Environment.NewLine}" + 
+                                Print(SelectAndOrderFailures(failures), Environment.NewLine),
+                    r => Print(r.Meaning));
+
+            static IEnumerable<string> SelectAndOrderFailures(IEnumerable<FailedUnderstandingAttempt> failedAttempts) =>
+                from failure in failedAttempts
+                where failure.FailureReason is not WrongNumberOfElements
+                select failure.ToString();
         }
 
         [Then("the following sentences should fail to be understood")]
@@ -96,8 +109,8 @@ namespace Ginger.Tests.StepDefinitions
             var unexpectedUnderstandings = (
                     from sentence in sentences.GetMultilineRows().Select(r => r["Sentence"])
                     let understanding = TryToUnderstand(sentence)
-                    where understanding.HasValue
-                    let understoodSentence = understanding.Value
+                    where understanding.IsRight
+                    let understoodSentence = understanding.Right!
                     select new
                     {
                         Sentence = sentence,
@@ -203,7 +216,7 @@ namespace Ginger.Tests.StepDefinitions
             set => _scenarioContext.Set(value);
         }
 
-        private MayBe<UnderstoodSentence> TryToUnderstand(string sentence) =>
+        private UnderstandingOutcome TryToUnderstand(string sentence) =>
             SentenceUnderstander.Understand(_grammarParser.ParsePreservingQuotes(sentence));
 
         private static bool MeaningsAreEqual(SentenceMeaning expectedMeaning, SentenceMeaning actualMeaning) =>

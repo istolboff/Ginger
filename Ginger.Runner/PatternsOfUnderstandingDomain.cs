@@ -2,14 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using SolarixGrammarEngineNET;
 using Prolog.Engine;
 using Prolog.Engine.Miscellaneous;
 using Ginger.Runner.Solarix;
-using SolarixGrammarEngineNET;
 
 namespace Ginger.Runner
 {
-    using UnderstandingResult = MayBe<(UnderstoodSentence UnderstoodSentence, int UnderstandingConfidenceLevel)>;
+    using UnderstandingAttemptOutcome = Either<FailedUnderstandingAttempt, UnderstandingResult>;
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
     using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuilingRecipe>, IReadOnlyCollection<ComplexTermBuilingRecipe>>;
     using FunctorBuildingRecipe = Either<FunctorBase /* BuiltIn Functor */, (NameBuilingRecipe FunctorNameBuildingRecipe, int Arity) /* Regular Functor building recipe */>;
@@ -22,26 +22,142 @@ namespace Ginger.Runner
     using static PatternBuilder;
     using static Prolog.Engine.Parsing.PrologParser;
 
-    internal sealed record PatternWithMeaning(DisambiguatedSentence Pattern, SentenceMeaning Meaning);
+    internal sealed record FailedUnderstandingAttempt(MayBe<string> PatternId, UnderstandingFailureReason FailureReason);
 
-    internal abstract record ConcreteUnderstander
+    internal enum NumberMismatchReason
     {
-        public abstract UnderstandingResult Understand(ParsedSentence sentence, MeaningBuilder meaningBuilder);
+        NumberOfSentenceElementsDiffer,
+        NumberOfSequencesOfExactWordsDiffer
     }
 
+    internal enum MetaUnderstandingFailure
+    {
+        ProducedRulesInsteadOfStatements
+    }
+
+    internal abstract record UnderstandingFailureReason;
+    internal sealed record WrongNumberOfElements(int ExpectedNumber, int ActualNumber, NumberMismatchReason MismatchReason) : UnderstandingFailureReason;
+    internal sealed record SentenceShouldContainWordAtIndexes(IReadOnlyCollection<int> indexes) : UnderstandingFailureReason;
+    internal sealed record SentenceShouldContainSameWordAtTheseIndexes(IReadOnlyCollection<int> indexes, WordOrQuotation<Word>[] elements) : UnderstandingFailureReason;
+    internal sealed record SentenceShouldStartStopWithExactWords(bool ShouldStart, bool ExactWords) : UnderstandingFailureReason;
+    internal sealed record WordExpected(WordChecker Checker, WordOrQuotation<Word> ActualWord) : UnderstandingFailureReason;
+    internal sealed record QuotationExpected(WordOrQuotation<Word> actualWord) : UnderstandingFailureReason;
+    internal sealed record CheckLemmaVersionsFailed(LemmaVersion ExpectedLemmaVersion, Word ActualWord, string ActualWordContent, bool ExpectParticularWord) : UnderstandingFailureReason;
+    internal sealed record MetaUnderstandingFailed(string quote, MetaUnderstandingFailure reason) : UnderstandingFailureReason;
+    internal sealed record EmptyNameBuilder : UnderstandingFailureReason;
+    
+    internal sealed record MultipleUnderstandingFailureReasons(IReadOnlyCollection<UnderstandingFailureReason> Reasons) : UnderstandingFailureReason
+    {
+        public static UnderstandingFailureReason CreateFrom(IReadOnlyCollection<UnderstandingFailureReason> reasons) =>
+            reasons.Count == 1 
+                ? reasons.Single()
+                : new MultipleUnderstandingFailureReasons(reasons);
+
+        public static UnderstandingFailureReason CreateFrom(IReadOnlyCollection<FailedUnderstandingAttempt> failedAttempts) =>
+            CreateFrom(failedAttempts.ConvertAll(it => it.FailureReason));
+    }
+
+    internal sealed record CheckPatternApi(string PatternId)
+    {
+        public CheckPatternApi WithSuffix(string suffix) =>
+            this with { PatternId = PatternId + suffix };
+
+        public Either<FailedUnderstandingAttempt, Unit> CheckNumberOfElements(int expectedNumber, int actualNumber, NumberMismatchReason mismatchReason) =>
+            actualNumber switch 
+            {
+                var _ when actualNumber == expectedNumber => Right(Unit.Instance),
+                _ => FailedAttempt(new WrongNumberOfElements(ExpectedNumber: expectedNumber, ActualNumber: actualNumber, MismatchReason: mismatchReason))
+            };
+
+        public Either<FailedUnderstandingAttempt, Unit> CheckThatThereAreWordsAtIndexes(
+            IReadOnlyCollection<int> g,
+            WordOrQuotation<Word>[] elements) 
+        =>
+            g.Where(positionInSentence => elements[positionInSentence].IsQuote).AsImmutable() switch
+            {
+                var positionsWithUnexpectedQuotes when positionsWithUnexpectedQuotes.Any() => 
+                     FailedAttempt(new SentenceShouldContainWordAtIndexes(positionsWithUnexpectedQuotes)),
+                _ => Right(Unit.Instance)
+            };
+
+        public Either<FailedUnderstandingAttempt, Unit> CheckThatThereIsTheSameWordAtIndexes(
+            IReadOnlyCollection<int> g,
+            WordOrQuotation<Word>[] elements)
+        => g.Skip(1).Aggregate(
+                ListWordLemmas(elements[g.First()].Word.Value!).ToHashSet(), 
+                (lemmas, positionInSentence) => 
+                {
+                    lemmas.IntersectWith(ListWordLemmas(elements[positionInSentence].Word.Value!));
+                    return lemmas;
+                }).AsImmutable() switch
+                {
+                    var repeatedEntryId when !repeatedEntryId.Any() => 
+                         FailedAttempt(new SentenceShouldContainSameWordAtTheseIndexes(g, elements)),
+                    _ => Right(Unit.Instance)
+                };
+
+        public Either<FailedUnderstandingAttempt, Unit> CheckThatSentenceStartsAndFinishesWithOrWithoutExactWords(
+            bool startsWithExactWords, 
+            bool endsWithExactWords, 
+            List<Range> matchedSequences,
+            WordOrQuotation<Word>[] elements)
+        =>
+            matchedSequences switch
+            {
+                var _ when startsWithExactWords && !matchedSequences.First().Start.Equals(Index.Start) =>
+                    FailedAttempt(new SentenceShouldStartStopWithExactWords(ShouldStart: true, ExactWords: startsWithExactWords)),
+                var _ when endsWithExactWords && !matchedSequences.Last().End.Equals(new Index(elements.Length)) =>
+                    FailedAttempt(new SentenceShouldStartStopWithExactWords(ShouldStart: false, ExactWords: endsWithExactWords)),
+                _ => Right(Unit.Instance)
+            };
+
+        public Either<FailedUnderstandingAttempt, int> Check(
+            MayBe<WordChecker> wordChecker,
+            WordOrQuotation<Word> actualWord,
+            IRussianLexicon russianLexicon)
+        =>
+            ((wordChecker.HasValue, actualWord.Word.HasValue) switch
+            {
+                (true, true) => wordChecker.Value!.Check(actualWord.Word.Value!, actualWord.Content, russianLexicon),
+                (true, false) => Left(new WordExpected(wordChecker.Value!, actualWord) as UnderstandingFailureReason),
+                (false, true) => Left(new QuotationExpected(actualWord) as UnderstandingFailureReason),
+                (false, false) => Right(0)
+            })
+            .MapLeft((Func<UnderstandingFailureReason, FailedUnderstandingAttempt>)(r => 
+                new FailedUnderstandingAttempt(Some(PatternId), r)));
+
+        private syntacticshugar_EitherFromLeft<FailedUnderstandingAttempt> FailedAttempt(
+            UnderstandingFailureReason reason) =>
+            Left(new FailedUnderstandingAttempt(Some(PatternId), reason));
+
+        private static IEnumerable<int> ListWordLemmas(Word word) =>
+            word.LemmaVersions.Select(lv => lv.EntryId);
+    }
+
+    internal sealed record UnderstandingResult(UnderstoodSentence UnderstoodSentence, int UnderstandingConfidenceLevel);
+
+    internal sealed record PatternWithMeaning(DisambiguatedSentence Pattern, SentenceMeaning Meaning);
+
+    internal abstract record ConcreteUnderstander(CheckPatternApi PatternChecks)
+    {
+        public abstract UnderstandingAttemptOutcome Understand(ParsedSentence sentence, MeaningBuilder meaningBuilder);
+    }
+
+#pragma warning disable CA1801 // Review unused parameters
     internal sealed record RegularConcreteUnderstander(
-        string PatternId,
+        CheckPatternApi PatternChecks,
         IReadOnlyCollection<MayBe<WordChecker>> SentenceElementsCheckers,
         IReadOnlyCollection<IReadOnlyCollection<int>> WordsUsedInMeaningTwiceOrMore,
         MeaningBuildingRecipe MeaningBuildingRecipe,
         IRussianLexicon RussianLexicon)
-            : ConcreteUnderstander
+            : ConcreteUnderstander(PatternChecks)
+#pragma warning restore CA1801
     {
-        public override UnderstandingResult Understand(ParsedSentence sentence, MeaningBuilder meaningBuilder)
+        public override UnderstandingAttemptOutcome Understand(ParsedSentence sentence, MeaningBuilder meaningBuilder)
         =>
             from confidenceLevel in CheckSentenceStructure(sentence)
             from meaning in meaningBuilder.BuildMeaning(MeaningBuildingRecipe, sentence)
-            select (new UnderstoodSentence(sentence, PatternId, meaning), confidenceLevel);
+            select new UnderstandingResult(new UnderstoodSentence(sentence, PatternChecks.PatternId, meaning), confidenceLevel);
 
         public static RegularConcreteUnderstander Create(
             string patternId, 
@@ -84,7 +200,7 @@ namespace Ginger.Runner
                     .AsImmutable();
 
             return new (
-                    patternId,
+                    new (patternId),
                     sentenceElementsCheckers,
                     wordsUsedInMeaningTwiceOrMore,
                     meaning.Map2(
@@ -93,51 +209,31 @@ namespace Ginger.Runner
                     russianLexicon);
         }
 
-        private int? CheckSentenceStructure(ParsedSentence parsedSentence)
-        {
-            LogCheckingT(Unit.Instance, $"+++Pattern {PatternId} will be checked against '{parsedSentence.Sentence}'");
-            var result = CheckSentenceStructureCore(parsedSentence);
-            LogCheckingT(Unit.Instance, $"---Applying pattern {PatternId} to '{parsedSentence.Sentence}' {(result.HasValue ? "suceeded" : "failed")}");
-            return result;
-        }
-
-        private int? CheckSentenceStructureCore(ParsedSentence parsedSentence)
+        private Either<FailedUnderstandingAttempt, int> CheckSentenceStructure(ParsedSentence parsedSentence)
         {
             var elements = parsedSentence.SentenceStructure.IterateByPosition().ToArray();
 
-            if (!LogChecking(elements.Length == SentenceElementsCheckers.Count, "number of elements"))
-            {
-                return null;
-            }
-
-            var result = SentenceElementsCheckers
-                            .Zip(elements)
-                            .AggregateWhile(
-                                (int?)0,
-                                (sentenceStructureMatchingLevel, it) =>
-                                    sentenceStructureMatchingLevel + Check(it.First, it.Second, RussianLexicon),
-                                sentenceStructureMatchingLevel => sentenceStructureMatchingLevel != null);
-
-            return result != null && 
-                    WordsUsedInMeaningTwiceOrMore.All(g => 
-                            LogChecking(
-                                g.All(positionInSentence => !elements[positionInSentence].IsQuote),
-                                "1. checked sentence should contain words at all indexes") &&
-                            LogChecking(
-                                g.Skip(1).Aggregate(
-                                    new HashSet<string>(ListWordLemmas(elements[g.First()].Word.Value!), RussianIgnoreCase), 
-                                    (lemmas, positionInSentence) => 
-                                    {
-                                        lemmas.IntersectWith(ListWordLemmas(elements[positionInSentence].Word.Value!));
-                                        return lemmas;
-                                    }).Any(),
-                                "2. for each groups of positions in sentence that contain the same word in pattern, " + 
-                                    "there should be the same words in the checked sentence as well"))
-                    ? result
-                    : null;
-
-            static IEnumerable<string> ListWordLemmas(Word word) =>
-                word.LemmaVersions.Select(lv => lv.Lemma);
+            return 
+                 from checkNumberOfElenmentsd in PatternChecks.CheckNumberOfElements(
+                                    expectedNumber: SentenceElementsCheckers.Count, 
+                                    actualNumber: elements.Length,
+                                    NumberMismatchReason.NumberOfSentenceElementsDiffer)
+                 from sentenceStructureMatchingLevel in SentenceElementsCheckers.Zip(elements).AggregateWhile(
+                                    Right<FailedUnderstandingAttempt, int>(0),
+                                    (accumulator, it) =>
+                                        from sentenceStructureMatchingLevel in accumulator
+                                        from currentElementLevel in PatternChecks.Check(it.First, it.Second, RussianLexicon)
+                                        select sentenceStructureMatchingLevel + currentElementLevel,
+                                    accumulator => accumulator.IsRight)
+                  from checkThatThereAreNoQuotesAtSpecifiedIndexes in WordsUsedInMeaningTwiceOrMore.AggregateWhile(
+                                    Right<FailedUnderstandingAttempt, Unit>(Unit.Instance),
+                                    (_, g) => PatternChecks.CheckThatThereAreWordsAtIndexes(g, elements),
+                                    accumulator => accumulator.IsRight)
+                  from sameWordsInPatternMeanSameWordsInUnderstoodSentence in WordsUsedInMeaningTwiceOrMore.AggregateWhile(
+                                    Right<FailedUnderstandingAttempt, Unit>(Unit.Instance),
+                                    (_, g) => PatternChecks.CheckThatThereIsTheSameWordAtIndexes(g, elements),
+                                    accumulator => accumulator.IsRight)
+                  select sentenceStructureMatchingLevel;
         }        
 
         private static IEnumerable<string> ListUsedWords(Rule meaning) =>
@@ -154,18 +250,19 @@ namespace Ginger.Runner
                     _ => Enumerable.Empty<string>()
                 }));
     }
-
+#pragma warning disable CA1801 // Review unused parameters
     internal sealed record DroppingQuotesUnderstander(
         RegularConcreteUnderstander WrappedUnderstander,
         IReadOnlyCollection<IReadOnlyCollection<WordChecker>> SequencesOfExactWords,
         IRussianGrammarParser GrammarParser,
         IRussianLexicon RussianLexicon)
-            : ConcreteUnderstander
+            : ConcreteUnderstander(WrappedUnderstander.PatternChecks.WithSuffix("-DroppedQuotes"))
+#pragma warning restore CA1801
     {
-        public override UnderstandingResult Understand(ParsedSentence sentence, MeaningBuilder meaningBuilder) =>
+        public override UnderstandingAttemptOutcome Understand(ParsedSentence sentence, MeaningBuilder meaningBuilder) =>
             from unquotedWordsRanges in CheckParsedSentence(sentence)
             from result in WrappedUnderstander.Understand(sentence.IntroduceQuotes(unquotedWordsRanges, GrammarParser), meaningBuilder)
-            select (result.UnderstoodSentence with { PatternId = PatternId }, result.UnderstandingConfidenceLevel);
+            select result with { UnderstoodSentence = result.UnderstoodSentence with { PatternId = PatternChecks.PatternId } };
 
         public static MayBe<DroppingQuotesUnderstander> TryCreate(
             RegularConcreteUnderstander wrappedUnderstander,
@@ -191,9 +288,6 @@ namespace Ginger.Runner
                 ? Some(new DroppingQuotesUnderstander(wrappedUnderstander, sequencesOfExactWords, grammarParser, russianLexicon))
                 : None;
         }
-        
-        private string PatternId => 
-            $"{WrappedUnderstander.PatternId}-DroppedQuotes";
 
         private bool StartsWithExactWords =>
             WrappedUnderstander.SentenceElementsCheckers.First().HasValue;
@@ -201,10 +295,8 @@ namespace Ginger.Runner
         private bool EndsWithExactWords =>
             WrappedUnderstander.SentenceElementsCheckers.Last().HasValue;
 
-        private MayBe<List<Range>> CheckParsedSentence(ParsedSentence parsedSentence)
+        private Either<FailedUnderstandingAttempt, List<Range>> CheckParsedSentence(ParsedSentence parsedSentence)
         {
-            LogCheckingT(Unit.Instance, $"+++Pattern {PatternId} will be checked against '{parsedSentence.Sentence}'");
-
             var elements = parsedSentence.SentenceStructure.IterateByPosition().ToArray();
 
             var matchedSequences = new List<Range>();
@@ -221,31 +313,30 @@ namespace Ginger.Runner
                 matchedSequences.Add(matchingSequenceRange.Value);
             }
 
-            var result = 
-                    LogChecking(
-                        matchedSequences.Count == SequencesOfExactWords.Count,
-                        $"finding macthes for all {SequencesOfExactWords.Count} sequences of exact words") &&
-                    LogChecking(
-                        !StartsWithExactWords || matchedSequences.First().Start.Equals(Index.Start),
-                        "checking the first match's location") &&
-                    LogChecking(
-                        !EndsWithExactWords || matchedSequences.Last().End.Equals(new Index(elements.Length)),
-                        "checking the last match's location")
-                    ? Some(matchedSequences)
-                    : None;
-            LogCheckingT(Unit.Instance, $"---Applying pattern {PatternId} to '{parsedSentence.Sentence}' {(result.HasValue ? "suceeded" : "failed")}");
-            return result;
+            return from checkNumberOfSequencesofExactWords in PatternChecks.CheckNumberOfElements(
+                                                                expectedNumber: SequencesOfExactWords.Count, 
+                                                                actualNumber: matchedSequences.Count,
+                                                                mismatchReason: NumberMismatchReason.NumberOfSequencesOfExactWordsDiffer)
+                   from checkThatSentenceStartsAndFinishesWithOrWithoutExactWords in PatternChecks.
+                                                            CheckThatSentenceStartsAndFinishesWithOrWithoutExactWords(
+                                                                startsWithExactWords: StartsWithExactWords, 
+                                                                endsWithExactWords: EndsWithExactWords, 
+                                                                matchedSequences,
+                                                                elements)
+                   select matchedSequences;
         }
 
         private Range? TryFindMatchingSequence(
-            WordOrQuotation<Word>[] elements, 
-            IReadOnlyCollection<WordChecker> sequenceOfExactWords, 
-            Index start) 
+            WordOrQuotation<Word>[] elements,
+            IReadOnlyCollection<WordChecker> sequenceOfExactWords,
+            Index start)
         =>
             Enumerable
                 .Range(start.Value, elements.Length - start.Value - sequenceOfExactWords.Count + 1)
-                .TryFirst(i => Enumerable.Range(0, sequenceOfExactWords.Count).All(
-                    j => Check(Some(sequenceOfExactWords.ElementAt(j)), elements[i + j], RussianLexicon) == 0))
+                .TryFirst(i => 
+                    Enumerable
+                        .Range(0, sequenceOfExactWords.Count)
+                        .All(j => PatternChecks.Check(Some(sequenceOfExactWords.ElementAt(j)), elements[i + j], RussianLexicon).IsRight))
                 .Map(i => new Range(Index.FromStart(i), Index.FromStart(i + sequenceOfExactWords.Count)))
                 .AsNullable();
     }
@@ -284,15 +375,6 @@ namespace Ginger.Runner
             invalidOperation 
                 ? new InvalidOperationException(message) 
                 : new NotSupportedException(message);
-
-        internal static int? Check(
-            MayBe<WordChecker> wordChecker, 
-            WordOrQuotation<Word> actualWord, 
-            IRussianLexicon russianLexicon) 
-        =>
-            wordChecker
-                .Map(checker => actualWord.Word.Fold(word => checker.Check(word, actualWord.Content, russianLexicon), () => null))
-                .OrElse(() => LogChecking(actualWord.IsQuote, "expected quotation") ? 0 : null);
 
         internal static RuleBuilingRecipe MakeRuleBuildingRecipe(
             DisambiguatedSentence pattern,
@@ -425,9 +507,13 @@ namespace Ginger.Runner
 
     internal sealed record WordChecker(LemmaVersion LemmaVersion, bool ExpectParticularWord)
     {
-        public int? Check(Word word, string content, IRussianLexicon russianLexicon) => 
-            (word.LemmaVersions.Any(CheckLemmaVersion) ? 0 : default(int?)) ?? 
-            (word.LemmaVersions.Any(lv => CheckWordForms(lv, content, russianLexicon)) ? 1 : default(int?));
+        public Either<UnderstandingFailureReason, int> Check(Word word, string content, IRussianLexicon russianLexicon) => 
+            word.LemmaVersions switch
+            {
+                var lemmaVersions when lemmaVersions.Any(CheckLemmaVersion) => Right(0),
+                var lemmaVersions when lemmaVersions.Any(lv => CheckWordForms(lv, content, russianLexicon)) => Right(1),
+                _ => Left(new CheckLemmaVersionsFailed(LemmaVersion, word, content, ExpectParticularWord) as UnderstandingFailureReason)
+            };
 
         private bool CheckLemmaVersion(LemmaVersion lv) =>
             ExpectParticularWord

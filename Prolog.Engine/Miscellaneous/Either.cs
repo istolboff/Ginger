@@ -6,11 +6,16 @@ namespace Prolog.Engine.Miscellaneous
 
     internal sealed record Either<TLeft, TRight>(TLeft? Left, TRight? Right, bool IsLeft)
     {
+        public bool IsRight => !IsLeft;
+        
         public TResult Fold<TResult>(Func<TLeft, TResult> getFromLeft, Func<TRight, TResult> getFromRight) =>
             IsLeft ? getFromLeft(Left!) : getFromRight(Right!);
 
         public Either<TLeft, TResult> Map<TResult>(Func<TRight, TResult> getFromRight) =>
             IsLeft ? Left<TLeft, TResult>(Left!) : Right<TLeft, TResult>(getFromRight(Right!));
+
+        public Either<TResult, TRight> MapLeft<TResult>(Func<TLeft, TResult> getFromLeft) =>
+            IsLeft ? Left<TResult, TRight>(getFromLeft(Left!)) : Right<TResult, TRight>(Right!);
 
         public Either<TLeftResult, TRightResult> Map2<TLeftResult, TRightResult>(
             Func<TLeft, TLeftResult> getFromLeft,
@@ -63,5 +68,14 @@ namespace Prolog.Engine.Miscellaneous
             @this.Fold(
                 Left<TLeft, TRight>,
                 right => right.Fold(Left<TLeft, TRight>, Right<TLeft, TRight>));
+
+        public static Either<TLeft, TRightFinal> SelectMany<TLeft, TRightOriginal, TRightIntermediate, TRightFinal>(
+            this Either<TLeft, TRightOriginal> @this,
+            Func<TRightOriginal, Either<TLeft, TRightIntermediate>> selector,
+            Func<TRightOriginal, TRightIntermediate, TRightFinal> projector) 
+        =>
+            @this
+                .Combine(@this.Map(selector).Flatten())
+                .Map(combined => projector(combined.First, combined.Second));
     }
 }

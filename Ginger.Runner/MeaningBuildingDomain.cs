@@ -13,6 +13,7 @@ namespace Ginger.Runner
     using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuilingRecipe>, IReadOnlyCollection<ComplexTermBuilingRecipe>>;
 
     using static DomainApi;
+    using static Either;
     using static Impl;
     using static MayBe;
     using static MeaningMetaModifiers;
@@ -46,35 +47,40 @@ namespace Ginger.Runner
     internal sealed record MeaningBuilder(
             SentenceUnderstander SentenceUnderstander,
             IRussianGrammarParser GrammarParser,
-            Func<MeaningBuilder, RuleBuilingRecipe, ParsedSentence, MayBe<Rule>> BuildRule,
-            Func<MeaningBuilder, ComplexTermBuilingRecipe, ParsedSentence, MayBe<ComplexTerm>> BuildComplexTerm,
-            Func<MeaningBuilder, AtomBuilingRecipe, ParsedSentence, MayBe<Atom>> BuildAtom,
-            Func<MeaningBuilder, NumberBuilingRecipe, ParsedSentence, MayBe<Prolog.Engine.Number>> BuildNumber,
-            Func<MeaningBuilder, VariableBuilingRecipe, ParsedSentence, MayBe<Variable>> BuildVariable,
-            Func<MeaningBuilder, FunctorBuildingRecipe, ParsedSentence, MayBe<FunctorBase>> BuildFunctor,
-            Func<MeaningBuilder, NameBuilingRecipe, ParsedSentence, MayBe<string>> BuildName)
+            Func<MeaningBuilder, RuleBuilingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, Rule>> BuildRule,
+            Func<MeaningBuilder, ComplexTermBuilingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, ComplexTerm>> BuildComplexTerm,
+            Func<MeaningBuilder, AtomBuilingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, Atom>> BuildAtom,
+            Func<MeaningBuilder, NumberBuilingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, Prolog.Engine.Number>> BuildNumber,
+            Func<MeaningBuilder, VariableBuilingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, Variable>> BuildVariable,
+            Func<MeaningBuilder, FunctorBuildingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, FunctorBase>> BuildFunctor,
+            Func<MeaningBuilder, NameBuilingRecipe, ParsedSentence, Either<FailedUnderstandingAttempt, string>> BuildName)
     {
-        public MayBe<SentenceMeaning> BuildMeaning(MeaningBuildingRecipe meaningBuildingRecipe, ParsedSentence sentence) =>
-            LiftOptionality(meaningBuildingRecipe.Map2(
-                ruleRecipes => LiftOptionality(ruleRecipes.ConvertAll(recipe => BuildRule(this, recipe, sentence))),
-                statementRecipes => LiftOptionality(statementRecipes.ConvertAll(recipe => BuildComplexTerm(this, recipe, sentence)))));
+        public Either<FailedUnderstandingAttempt, SentenceMeaning> BuildMeaning(MeaningBuildingRecipe meaningBuildingRecipe, ParsedSentence sentence) 
+        =>
+            LiftFailures(
+                meaningBuildingRecipe
+                    .Map2(
+                        ruleRecipes => GatherBuiltElements(ruleRecipes.ConvertAll(recipe => BuildRule(this, recipe, sentence))),
+                        statementRecipes => GatherBuiltElements(statementRecipes.ConvertAll(recipe => BuildComplexTerm(this, recipe, sentence)))));
 
         public static MeaningBuilder Create(
             SentenceUnderstander sentenceUnderstander, 
             IRussianGrammarParser grammarParser) 
         =>
-            new (sentenceUnderstander, grammarParser, Build, Build, Build, Build, Build, Build, Build);
+            new (sentenceUnderstander, grammarParser, BuildRuleCore, BuildComplexTermCore, BuildAtomCore, BuildNumberCore, BuildVariableCore, BuildFunctorCore, BuildNameCore);
 
-        private static MayBe<Rule> Build(MeaningBuilder @this, RuleBuilingRecipe recipe, ParsedSentence sentence) =>
+        private static Either<FailedUnderstandingAttempt, Rule> BuildRuleCore(MeaningBuilder @this, RuleBuilingRecipe recipe, ParsedSentence sentence) 
+        =>
             from conclusion in @this.BuildComplexTerm(@this, recipe.ConclusionBuildingRecipe, sentence)
-            from premises in LiftOptionality(recipe.PremiseBuildingRecipies.ConvertAll(r => @this.BuildComplexTerm(@this, r, sentence)))
+            from premises in GatherBuiltElements(recipe.PremiseBuildingRecipies.ConvertAll(r => @this.BuildComplexTerm(@this, r, sentence)))
             select Rule(conclusion, premises);
 
-        private static MayBe<ComplexTerm> Build(MeaningBuilder @this, ComplexTermBuilingRecipe recipe, ParsedSentence sentence) =>
+        private static Either<FailedUnderstandingAttempt, ComplexTerm> BuildComplexTermCore(MeaningBuilder @this, ComplexTermBuilingRecipe recipe, ParsedSentence sentence) 
+        =>
             recipe.ConcreteBuilder.Fold(
                 regularRecipe => 
                     from functor in @this.BuildFunctor(@this, regularRecipe.FunctorBuildingRecipe, sentence)
-                    from arguments in LiftOptionality(regularRecipe.ArgumentBuildingRecipies.ConvertAll(r => Build(@this, r, sentence)))
+                    from arguments in GatherBuiltElements(regularRecipe.ArgumentBuildingRecipies.ConvertAll(r => Build(@this, r, sentence)))
                     select AccomodateInlinedArguments(functor, arguments),
                 understanderRecipe => 
                     from quote in @this.BuildName(@this, understanderRecipe.QuoteLocator, sentence)
@@ -84,7 +90,7 @@ namespace Ginger.Runner
                                             @this.SentenceUnderstander)
                     select understanding);
 
-        private static MayBe<Term> Build(MeaningBuilder @this, TermBuilingRecipe recipe, ParsedSentence sentence) =>
+        private static Either<FailedUnderstandingAttempt, Term> Build(MeaningBuilder @this, TermBuilingRecipe recipe, ParsedSentence sentence) =>
             recipe switch
             {
                 AtomBuilingRecipe atomRecipe => @this.BuildAtom(@this, atomRecipe, sentence).Map(t => t as Term),
@@ -94,34 +100,54 @@ namespace Ginger.Runner
                 _ => throw ProgramLogic.Error($"no code provided to build Term from {recipe.GetType().Name}")
             };
 
-        private static MayBe<Atom> Build(MeaningBuilder @this, AtomBuilingRecipe recipe, ParsedSentence sentence) =>
+        private static Either<FailedUnderstandingAttempt, Atom> BuildAtomCore(MeaningBuilder @this, AtomBuilingRecipe recipe, ParsedSentence sentence) =>
             @this.BuildName(@this, recipe.AtomContentBuilder, sentence).Map(Atom);
 
-        private static MayBe<Prolog.Engine.Number> Build(MeaningBuilder @this, NumberBuilingRecipe recipe, ParsedSentence sentence) =>
+        private static Either<FailedUnderstandingAttempt, Prolog.Engine.Number> BuildNumberCore(MeaningBuilder @this, NumberBuilingRecipe recipe, ParsedSentence sentence) =>
             @this.BuildName(@this, recipe.NumberTextRepresentationBuilder, sentence).Map(numberRepresentation => Number(int.Parse(numberRepresentation, CultureInfo.CurrentCulture)));
 
-        private static MayBe<Variable> Build(MeaningBuilder @this, VariableBuilingRecipe recipe, ParsedSentence sentence) =>
+        private static Either<FailedUnderstandingAttempt, Variable> BuildVariableCore(MeaningBuilder @this, VariableBuilingRecipe recipe, ParsedSentence sentence) =>
             @this.BuildName(@this, recipe.VariableNameBuilder, sentence).Map(Variable);
 
-        private static MayBe<FunctorBase> Build(MeaningBuilder @this, FunctorBuildingRecipe recipe, ParsedSentence sentence) =>
+        private static Either<FailedUnderstandingAttempt, FunctorBase> BuildFunctorCore(MeaningBuilder @this, FunctorBuildingRecipe recipe, ParsedSentence sentence) =>
             recipe.Fold(
-                Some,
+                builtInFinctor => Right(builtInFinctor),
                 functorRecipe => @this
                                     .BuildName(@this, functorRecipe.FunctorNameBuildingRecipe, sentence)
                                     .Map(name => Functor(name, functorRecipe.Arity))
                                     .Map(f => f as FunctorBase));
 
-        private static MayBe<string> Build(MeaningBuilder @this, NameBuilingRecipe recipe, ParsedSentence sentence) =>
+        private static Either<FailedUnderstandingAttempt, string> BuildNameCore(MeaningBuilder @this, NameBuilingRecipe recipe, ParsedSentence sentence) =>
             recipe.NameComponentGetters.Count switch
             {
-                0 => None,
-                1 => Some(recipe.NameComponentGetters.Single().Invoke(sentence)),
-                _ => Some(string.Join(
+                0 => Left(new FailedUnderstandingAttempt(None, new EmptyNameBuilder())),
+                1 => Right(recipe.NameComponentGetters.Single().Invoke(sentence)),
+                _ => Right(string.Join(
                         string.Empty, 
                         recipe.NameComponentGetters.Select((wl, i) => 
                             i == 0 && !recipe.CapitalizeFirstWord
                                 ? wl.Invoke(sentence)
                                 : Russian.TextInfo.ToTitleCase(wl.Invoke(sentence)))))
             };
+
+        private static Either<FailedUnderstandingAttempt, IReadOnlyCollection<T>> GatherBuiltElements<T>(
+            IReadOnlyCollection<Either<FailedUnderstandingAttempt, T>> elements)
+        =>
+            elements.Where(e => e.IsLeft).Select(e => e.Left!.FailureReason).AsImmutable() switch
+            {
+                var failures when failures.Any() => 
+                    Left(
+                        new FailedUnderstandingAttempt(
+                            None, 
+                            MultipleUnderstandingFailureReasons.CreateFrom(failures))),
+                _ => Right(elements.ConvertAll(e => e.Right!))
+            };
+
+        private static Either<FailedUnderstandingAttempt, Either<IReadOnlyCollection<TLeft>, IReadOnlyCollection<TRight>>> LiftFailures<TLeft, TRight>(
+            Either<Either<FailedUnderstandingAttempt, IReadOnlyCollection<TLeft>>, Either<FailedUnderstandingAttempt, IReadOnlyCollection<TRight>>> outcome)
+        =>
+            outcome.Fold(
+                left => left.Map(leftItems => Left<IReadOnlyCollection<TLeft>, IReadOnlyCollection<TRight>>(leftItems)),
+                right => right.Map(rightItems => Right<IReadOnlyCollection<TLeft>, IReadOnlyCollection<TRight>>(rightItems)));
     }
 }

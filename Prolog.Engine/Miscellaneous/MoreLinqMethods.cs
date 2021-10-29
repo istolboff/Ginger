@@ -126,12 +126,13 @@ namespace Prolog.Engine.Miscellaneous
             return @this;
         }
 
-        public static HashSet<T> AddAndReturnSelf<T>(this HashSet<T> @this, T item)
+        public static TCollection AddAndReturnSelf<TCollection, TElement>(this TCollection @this, TElement item)
+            where TCollection : ICollection<TElement>
         {
             @this.Add(item);
             return @this;
         }
-
+        
         public static IEnumerable<TPartitioned> Partition<T, TPartitioned>(
             this IEnumerable<T> @this, 
             Func<T, T, TPartitioned> makePartition)

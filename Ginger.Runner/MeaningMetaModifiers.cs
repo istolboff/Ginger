@@ -8,6 +8,7 @@ using Prolog.Engine.Miscellaneous;
 namespace Ginger.Runner
 {
     using static DomainApi;
+    using static Either;
     using static MayBe;
     using static PatternBuilder;
     using static PrettyPrinting;
@@ -24,25 +25,28 @@ namespace Ginger.Runner
         public static SentenceMeaning Preprocess(SentenceMeaning meaning) =>
             meaning.Map2(rules => rules.ConvertAll(Preprocess), statements => statements.ConvertAll(Preprocess));
 
-        public static MayBe<ComplexTerm> BuildUnderstanding(
+        public static Either<FailedUnderstandingAttempt, ComplexTerm> BuildUnderstanding(
             string quote,
             IRussianGrammarParser grammarParser,
             SentenceUnderstander sentenceUnderstander)
         {
             var parsedQuote = grammarParser.ParsePreservingQuotes(quote);
-            return sentenceUnderstander.Understand(parsedQuote)
-                    .Map(it => it.Meaning.Fold(
-                        _ => LogCheckingT(
-                                None, 
-                                $"understanding of '{quote}' produced one or more Rules. Only a set of statements is supported."),
-                        statements => LogCheckingT(
-                            Some(ComplexTerm(
-                                    Functor(InlinerFunctorName, statements.Count),
-                                    statements)),
-                            $"undestanding of '{quote}'")))
-                    .OrElse(() => LogCheckingT(
-                                None, 
-                                $"understanding of '{quote}'."));
+            return (sentenceUnderstander.Understand(parsedQuote) switch
+                    {
+                        (var failedAttempts, _, true) => 
+                            Left<UnderstandingFailureReason, ComplexTerm>(
+                                MultipleUnderstandingFailureReasons.CreateFrom(failedAttempts!)),
+                        (_, var understoodSentence, false) => 
+                            understoodSentence!.Meaning.Fold(
+                                _ => Left<UnderstandingFailureReason, ComplexTerm>(
+                                    new MetaUnderstandingFailed(
+                                        quote, 
+                                        MetaUnderstandingFailure.ProducedRulesInsteadOfStatements)),
+                                statements => Right(ComplexTerm(
+                                                Functor(InlinerFunctorName, statements.Count),
+                                                statements)))
+                    })
+                    .MapLeft(failureReason => new FailedUnderstandingAttempt(None, failureReason));
         }
 
         public static ComplexTerm AccomodateInlinedArguments(FunctorBase functor, IReadOnlyCollection<Term> arguments)
