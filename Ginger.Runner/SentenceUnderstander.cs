@@ -20,11 +20,11 @@ namespace Ginger.Runner
     using static PrologParser;
     using static TextParsingPrimitives;
 
-    internal sealed record RuleWithRecipe(Rule Rule, RuleBuildingRecipe Recipe);
+    internal readonly record struct RuleWithRecipe(Rule Rule, RuleBuildingRecipe Recipe);
 
-    internal sealed record ComplexTermWithRecipe(ComplexTerm ComplexTerm, MayBe<ComplexTermBuildingRecipe> Recipe);
+    internal readonly record struct ComplexTermWithRecipe(ComplexTerm ComplexTerm, MayBe<ComplexTermBuildingRecipe> Recipe);
 
-    internal sealed record UnderstoodSentence(
+    internal readonly record struct UnderstoodSentence(
         ParsedSentence Sentence, 
         string PatternId,
         MeaningWithRecipe MeaningWithRecipe);

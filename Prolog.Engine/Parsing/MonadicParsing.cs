@@ -8,13 +8,13 @@ namespace Prolog.Engine.Parsing
     using static Either;
     using static MayBe;
 
-    internal sealed record ParsingResult<TInput, TValue>(TValue Value, TInput Rest)
+    internal readonly record struct ParsingResult<TInput, TValue>(TValue Value, TInput Rest)
     {
         public ParsingResult<TInput, TMappedValue> Map<TMappedValue>(Func<TValue, TMappedValue> mapValue) =>
             new (mapValue(Value), Rest);
     }
 
-    internal sealed record ParsingError<TInput>(string Text, TInput Location);
+    internal readonly record struct ParsingError<TInput>(string Text, TInput Location);
 
     internal delegate Either<ParsingError<TInput>, ParsingResult<TInput, TValue>> Parser<TInput, TValue>(TInput input);
 

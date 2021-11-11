@@ -49,6 +49,6 @@ namespace Prolog.Engine
         public bool IsFact => !Premises.Any();
     }
 
-    public sealed record UnificationResult(bool Succeeded, StructuralEquatableDictionary<Variable, Term> Instantiations);
+    public readonly record struct UnificationResult(bool Succeeded, StructuralEquatableDictionary<Variable, Term> Instantiations);
 #pragma warning restore SA1313
 }

@@ -4,7 +4,7 @@ namespace Prolog.Engine.Miscellaneous
 {
     using static Either;
 
-    internal sealed record Either<TLeft, TRight>(TLeft? Left, TRight? Right, bool IsLeft)
+    internal readonly record struct Either<TLeft, TRight>(TLeft? Left, TRight? Right, bool IsLeft)
     {
         public bool IsRight => !IsLeft;
         
@@ -44,9 +44,9 @@ namespace Prolog.Engine.Miscellaneous
 
 #pragma warning disable CA1707 // Remove the underscores from type name
 // ReSharper disable InconsistentNaming
-    internal sealed record syntacticshugar_EitherFromLeft<TLeft>(TLeft Left);
+    internal readonly record struct syntacticshugar_EitherFromLeft<TLeft>(TLeft Left);
 
-    internal sealed record syntacticshugar_EitherFromRight<TRight>(TRight Right);
+    internal readonly record struct syntacticshugar_EitherFromRight<TRight>(TRight Right);
 // ReSharper restore InconsistentNaming
 #pragma warning restore CA1707
 

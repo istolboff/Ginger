@@ -13,5 +13,8 @@ namespace Prolog.Engine.Miscellaneous
 #pragma warning restore CA1801
         {
         }
+
+        public static T SuppressCs1673<T>(T value) =>
+            value;
     }
 }

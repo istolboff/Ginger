@@ -9,7 +9,7 @@ namespace Prolog.Engine.Parsing
     using static MonadicParsing;
 
 #pragma warning disable CA1801 // Review unused parameters
-    internal sealed record ListInput<T>(IReadOnlyList<T> Items, int Position = 0)
+    internal readonly record struct ListInput<T>(IReadOnlyList<T> Items, int Position = 0)
 #pragma warning restore CA1801
     {
         public override string ToString() => 

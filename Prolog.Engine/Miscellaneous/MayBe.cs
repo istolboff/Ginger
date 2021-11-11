@@ -44,7 +44,7 @@ namespace Prolog.Engine.Miscellaneous
             new (hasValue ? Unit.Instance : default, hasValue);
     }
 
-    internal sealed record MayBe<T>(T? Value, bool HasValue)
+    internal readonly record struct MayBe<T>(T? Value, bool HasValue)
     {
         public TResult Fold<TResult>(Func<T, TResult> convert, Func<TResult> getDefaultValue) =>
             HasValue ? convert(Value!) : getDefaultValue();
@@ -84,7 +84,7 @@ namespace Prolog.Engine.Miscellaneous
 
 #pragma warning disable CA1707 // Remove the underscores from type name
 // ReSharper disable InconsistentNaming
-    internal sealed record syntacticshugar_NoneProducer;
+    internal readonly record struct syntacticshugar_NoneProducer;
 // ReSharper restore InconsistentNaming    
 #pragma warning restore CA1707
 }

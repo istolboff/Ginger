@@ -9,7 +9,7 @@ namespace Ginger.Runner
 {
     using static MayBe;
 
-    internal sealed record SubstringLocation(int Start, int Length);
+    internal readonly record struct SubstringLocation(int Start, int Length);
 
     internal static class TextManipulation
     {

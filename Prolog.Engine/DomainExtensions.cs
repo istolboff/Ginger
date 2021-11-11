@@ -6,13 +6,12 @@ using Prolog.Engine.Miscellaneous;
 namespace Prolog.Engine
 {
     using static DomainApi;
-    using static MakeCompilerHappy;
 
     public static class DomainExtensions
     {
         public static UnificationResult And(this UnificationResult @this, UnificationResult another)
         {
-            if (!SuppressCa1062(@this).Succeeded || !SuppressCa1062(another).Succeeded)
+            if (!@this.Succeeded || !another.Succeeded)
             {
                 return Unification.Failure;
             }

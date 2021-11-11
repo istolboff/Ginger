@@ -248,7 +248,7 @@ namespace Ginger.Runner.Solarix
             };
     }
 
-    internal sealed record CoordinateValue(Type CoordinateType, string ValueName, int EnumValue)
+    internal readonly record struct CoordinateValue(Type CoordinateType, string ValueName, int EnumValue)
     {
         public object ToObject() => Enum.ToObject(CoordinateType, EnumValue);
     }
@@ -361,9 +361,9 @@ namespace Ginger.Runner.Solarix
 
     internal sealed record NullGrammarCharacteristics : GrammarCharacteristics;
 
-    internal sealed record LemmaVersion(string Lemma, int EntryId, PartOfSpeech? PartOfSpeech, GrammarCharacteristics Characteristics);
+    internal readonly record struct LemmaVersion(string Lemma, int EntryId, PartOfSpeech? PartOfSpeech, GrammarCharacteristics Characteristics);
 
-    internal sealed record SentenceElement(string Content, IReadOnlyCollection<LemmaVersion> LemmaVersions, IReadOnlyCollection<SentenceElement> Children, LinkType? LeafLinkType, int PositionInSentence);
+    internal readonly record struct SentenceElement(string Content, IReadOnlyCollection<LemmaVersion> LemmaVersions, IReadOnlyCollection<SentenceElement> Children, LinkType? LeafLinkType, int PositionInSentence);
 // ReSharper restore UnusedMember.Global
 // ReSharper restore InconsistentNaming
 }

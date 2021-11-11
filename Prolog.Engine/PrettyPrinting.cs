@@ -32,8 +32,8 @@ namespace Prolog.Engine
                 Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>> sentenceMeaning => sentenceMeaning.Fold(rules => Print(rules), statements => Print(statements)),
                 string text => text,
                 IEnumerable collection => string.Join(enumSeparator, collection.Cast<object>().Select(it => Print(it, enumSeparator, customPrinters))),
-                _ when customPrinters.FirstOrDefault(cp => cp.ArgumentType.IsAssignableFrom(@this?.GetType() ?? typeof(Unit))) is var customPrinter && customPrinter != null =>
-                    Print(customPrinter.Delegate.DynamicInvoke(@this)),
+                _ when customPrinters.TryFirst(cp => cp.ArgumentType.IsAssignableFrom(@this?.GetType() ?? typeof(Unit))) is var customPrinter && customPrinter.HasValue =>
+                    Print(customPrinter.Value.Delegate.DynamicInvoke(@this)),
                 _ => @this?.ToString() ?? "NULL"
             };
 
@@ -43,7 +43,7 @@ namespace Prolog.Engine
 
 #pragma warning disable CA1707 // Remove the underscores from type name
 // ReSharper disable InconsistentNaming
-    internal sealed record syntacticshugar_CustomPrinter(Type ArgumentType, Delegate Delegate);
+    internal readonly record struct syntacticshugar_CustomPrinter(Type ArgumentType, Delegate Delegate);
 // ReSharper restore InconsistentNaming    
 #pragma warning restore CA1707
 }

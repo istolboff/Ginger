@@ -1,10 +1,11 @@
 <Project>
   <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>enable</Nullable>
     <NoWarn>SA0001</NoWarn>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningsAsErrors />
     <WarningLevel>4</WarningLevel>
     <OutputPath>..\bin\$(Configuration)</OutputPath>
-    <Nullable>enable</Nullable>
   </PropertyGroup>
 </Project>

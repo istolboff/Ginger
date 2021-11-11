@@ -13,7 +13,7 @@ namespace Prolog.Engine.Parsing
     using static TextParsingPrimitives;
     using static MonadicParsing;
 
-    internal sealed record PrologConstructionsParsers(
+    internal readonly record struct PrologConstructionsParsers(
         Parser<TextInput, IReadOnlyCollection<Rule>> ProgramParser, 
         Parser<TextInput, IReadOnlyCollection<IReadOnlyCollection<ComplexTerm>>> QueryParser,
         Parser<TextInput, IReadOnlyCollection<ComplexTerm>> PremisesGroupParser,

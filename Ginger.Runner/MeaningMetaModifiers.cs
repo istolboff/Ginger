@@ -230,8 +230,7 @@ namespace Ginger.Runner
                     (var understandingFailures, _, true) => 
                         Fail(understandingFailures!),
                     (_, var (parsedSentence, _, meaningWithRecipe), false) =>
-                        TryUnwrapMeaning(meaningWithRecipe, parsedSentence),
-                    _ => throw ProgramLogic.ThisSwitchPathSeemsToBeUnreachable
+                        TryUnwrapMeaning(meaningWithRecipe, parsedSentence)
                 };
 
             static Either<ComplexTerm, ComplexTermAdjuster> Fail(

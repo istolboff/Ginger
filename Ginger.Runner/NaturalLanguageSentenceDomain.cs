@@ -9,6 +9,7 @@ using Ginger.Runner.Solarix;
 namespace Ginger.Runner
 {
     using static MayBe;
+    using static MakeCompilerHappy;
     using static TextManipulation;
 
     internal sealed record WordOrQuotation<TWord>(
@@ -72,39 +73,43 @@ namespace Ginger.Runner
 
     internal sealed record Word(IReadOnlyCollection<LemmaVersion> LemmaVersions, LinkType? LeafLinkType);
 
-    internal sealed record ParsedSentence(string Sentence, WordOrQuotation<Word> SentenceStructure)
+    internal readonly record struct ParsedSentence(string Sentence, WordOrQuotation<Word> SentenceStructure)
     {
         public LemmaVersion GetRelevantLemmaAt(
             int positionInSentence,
             LemmaVersion lemmaVersion,
             Func<string, Exception> reportException) 
-        =>
-            SentenceStructure
+        {
+            var sentence = SuppressCs1673(Sentence);
+            return SentenceStructure
                 .IterateDepthFirst()
                 .Single(
                     it => it.Word.HasValue && it.PositionInSentence == positionInSentence,
                     _ => reportException(
-                            $"{Sentence} does not have a word at position={positionInSentence}. " + 
+                            $"{sentence} does not have a word at position={positionInSentence}. " + 
                             "We expected to see word at this position, but it's either quotation, or there's no element at this index at all."))
                 .Word.Value!.LemmaVersions
                 .TryFindRelevantLemma(lemmaVersion)
                 .OrElse(() => throw reportException(
                                 $"Could not find {lemmaVersion.PartOfSpeech} lemma version " +
                                 $"of type {lemmaVersion.Characteristics.GetType().Name} " +
-                                $"at position={positionInSentence} in sentence {Sentence}."));
+                                $"at position={positionInSentence} in sentence {sentence}."));
+        }
 
         public string GetQuotationAt(
             int positionInSentence,
             Func<string, Exception> reportException)
-        =>
-            SentenceStructure
+        {
+            var sentence = SuppressCs1673(Sentence);
+            return SentenceStructure
                 .IterateDepthFirst()
                 .Single(
                     it => !it.Word.HasValue && it.PositionInSentence == positionInSentence,
                     _ => reportException(
-                            $"{Sentence} does not have a quotation at position={positionInSentence}. " + 
+                            $"{sentence} does not have a quotation at position={positionInSentence}. " + 
                             "We expected to see quotation at this position, but it's either word, or there's no element at this index at all."))
                 .Content;
+        }
 
         public ParsedSentence IntroduceQuotes(
             IReadOnlyCollection<Range> unquotedWordsRanges,
@@ -210,7 +215,7 @@ namespace Ginger.Runner
             Annotations.Quote(Content);
     }
 
-    internal sealed record AnnotatedSentence(string Sentence, WordOrQuotation<AnnotatedWord> SentenceStructure)
+    internal readonly record struct AnnotatedSentence(string Sentence, WordOrQuotation<AnnotatedWord> SentenceStructure)
     {
         public AnnotatedSentence Transform(
             Func<AnnotatedWord, string> mapWord, 
@@ -225,8 +230,10 @@ namespace Ginger.Runner
                         .Select(it => it.Word.Fold(mapWord, () => $"'{it.Content}'"))),
                 russianLexicon);
 
-        public DisambiguatedSentence Disambiguate(IRussianLexicon russianLexicon, bool enforceLemmaVersions = false) =>
-             new (
+        public DisambiguatedSentence Disambiguate(IRussianLexicon russianLexicon, bool enforceLemmaVersions = false)
+        {
+            var sentence = SuppressCs1673(Sentence);
+            return new (
                 Normalize(SentenceStructure), 
                 Sentence, 
                 SentenceStructure.Map(word => 
@@ -235,7 +242,7 @@ namespace Ginger.Runner
                     {
                         var annotationVariants = string.Join(";", BuildDisambiguatingAnnotations(word.LemmaVersions, russianLexicon));
                         throw new InvalidOperationException(
-                                $"The word '{word.Content}' in pattern '{Sentence}' has the following lemma versions: " +
+                                $"The word '{word.Content}' in pattern '{sentence}' has the following lemma versions: " +
                                 string.Join("; ", word.LemmaVersions) +
                                 $". You can annotate the word with one of the following variants {annotationVariants} in order to disambiguate it, " + 
                                 "or reformulate the pattern wording.");
@@ -245,10 +252,11 @@ namespace Ginger.Runner
                                 word.GetDisambiguatedLemmaVersion(
                                     russianLexicon,
                                     enforceLemmaVersions,
-                                    message => new InvalidOperationException($"Sentence '{Sentence}': {message}")),
+                                    message => new InvalidOperationException($"Sentence '{sentence}': {message}")),
                                 word.Annotations.IsFixed || word.Content.All(char.IsPunctuation),
                                 word.LeafLinkType);
                 }));
+        }
 
         public static string BuildDisambiguatingAnnotations(
             IReadOnlyCollection<LemmaVersion> lemmaVersions,
@@ -355,7 +363,7 @@ namespace Ginger.Runner
         bool IsFixed,
         LinkType? LeafLinkType);
 
-    internal sealed record DisambiguatedSentence(string Sentence, string AnnotatedSentence, WordOrQuotation<DisambiguatedWord> SentenceStructure)
+    internal readonly record struct DisambiguatedSentence(string Sentence, string AnnotatedSentence, WordOrQuotation<DisambiguatedWord> SentenceStructure)
     {
         public ParsedSentence AsParsedSentence() =>
             new (Sentence, SentenceStructure.Map(word => new Word(word.LemmaVersion.ToImmutable(), word.LeafLinkType)));
