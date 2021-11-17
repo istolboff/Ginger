@@ -39,9 +39,11 @@ namespace Ginger.Tests.StepDefinitions
         [Given("the following Patterns")]
         public void DefinePatterns(Table patterns)
         {
-            SentenceUnderstander = SentenceUnderstander.LoadFromPatterns(
+            KnownPatterns.AddRange(
                 from r in patterns.GetMultilineRows()
-                select new GenerativePattern(r["Id"], r["Pattern"], ParseMeaning(r["Meaning"])),
+                select new GenerativePattern(r["Id"], r["Pattern"], ParseMeaning(r["Meaning"])));
+            SentenceUnderstander = SentenceUnderstander.LoadFromPatterns(
+                KnownPatterns,
                 _grammarParser,
                 _russianLexicon,
                 CreateMeaningBuilder());
@@ -217,6 +219,9 @@ namespace Ginger.Tests.StepDefinitions
             get => _scenarioContext.TryGetValue<SutSpecificationBuilder>(out var v) ? v : null;
             set => _scenarioContext.Set(value);
         }
+
+        private List<GenerativePattern> KnownPatterns => 
+            _scenarioContext.GetOrCreateValue<List<GenerativePattern>>();
 
         private UnderstandingOutcome TryToUnderstand(string sentence) =>
             SentenceUnderstander.Understand(_grammarParser.ParsePreservingQuotes(sentence), CreateMeaningBuilder());

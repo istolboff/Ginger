@@ -24,6 +24,18 @@ namespace Ginger.Tests
                     .AsImmutable()
                 : @this.Rows.Select(r => r.AsReadOnlyDictionary()).AsImmutable();
 
+        public static T GetOrCreateValue<T>(this ScenarioContext @this)
+            where T : new() 
+        {
+            if (!@this.TryGetValue(out T value))
+            {
+                value = new T();
+                @this.Set(value);
+            }
+
+            return value;
+        }
+
         private static bool IsSeparatorRow(TableRow row) => 
             row.Values.All(value => value.All(ch => ch == '-'));
     }

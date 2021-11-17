@@ -20,4 +20,4 @@ void Main()
 
 record SentenceElement(string Content, IReadOnlyList<SentenceElement> Children, string LeafLinkType);
 
-const string MemoizedParsingResults = @"C:\Users\istolbov\Documents\devl\Ginger\bin\Debug\net5.0\SolarixRussianGrammarParser.memoized";
+const string MemoizedParsingResults = @"C:\Users\istolbov\Documents\devl\Ginger\bin\Debug\net6.0\SolarixRussianGrammarParser.memoized";
