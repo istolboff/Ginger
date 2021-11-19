@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Reflection;
 using Prolog.Engine.Miscellaneous;
 using Prolog.Engine.Parsing;
 using Ginger.Runner.Solarix;
 using Prolog.Engine;
+using System.Reflection;
 
 namespace Ginger.Runner
 {
@@ -14,11 +13,7 @@ namespace Ginger.Runner
     using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
     
     using static Either;
-    using static MakeCompilerHappy;
     using static MayBe;
-    using static MonadicParsing;
-    using static PrologParser;
-    using static TextParsingPrimitives;
 
     internal readonly record struct RuleWithRecipe(Rule Rule, RuleBuildingRecipe Recipe);
 
@@ -45,13 +40,15 @@ namespace Ginger.Runner
             MeaningBuilder meaningBuilder) 
         =>
             LoadFromPatterns(
-                ParsePatterns(ReadEmbeddedResource("Ginger.Runner.SentenceUnderstandingRules.txt")),
+                    TextInput.ReadFromEmbeddedResource(
+                        "Ginger.Runner.SentenceUnderstandingRules.txt", 
+                        Assembly.GetExecutingAssembly()),
                 grammarParser,
                 russianLexicon,
                 meaningBuilder);
 
         public static SentenceUnderstander LoadFromPatterns(
-            IEnumerable<GenerativePattern> generativePatterns,
+            TextInput patternsText,
             IRussianGrammarParser grammarParser,
             IRussianLexicon russianLexicon,
             MeaningBuilder meaningBuilder) 
@@ -59,7 +56,7 @@ namespace Ginger.Runner
             var concreteUnderstanders = new List<ConcretePatternOfUnderstanding>();
             var result = new SentenceUnderstander(concreteUnderstanders);
 
-            foreach (var generativePattern in generativePatterns)
+            foreach (var generativePattern in GenerativePatternParser.ParsePatterns(patternsText))
             {
                 var concretePatterns = generativePattern
                                         .GenerateConcretePatterns(grammarParser, russianLexicon)
@@ -132,42 +129,6 @@ namespace Ginger.Runner
                     (var failedAttempts, (_, false)) => Left(failedAttempts as IReadOnlyCollection<FailedUnderstandingAttempt>),
                     (_, (var result, true)) => Right(result!.UnderstoodSentence)
                 };
-
-        private static TextInput ReadEmbeddedResource(string name)
-        {
-            var stream = Assembly
-                            .GetExecutingAssembly()
-                            .GetManifestResourceStream(name);
-            using var reader = new StreamReader(SuppressCa1062(stream));
-            return new (reader.ReadToEnd());
-        }
-
-        private static IEnumerable<GenerativePattern> ParsePatterns(TextInput rulesText)
-        {
-            var patternId = Tracer.Trace(
-                from unused in Lexem("pattern-")
-                from id in Repeat(Expect(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-'))
-                from unused1 in Lexem(":").Then(Eol)
-                select string.Join(string.Empty, id),
-                "patternId");
-
-            var meaning = Tracer.Trace(
-                Either(PrologParsers.ProgramParser, PrologParsers.PremisesGroupParser),
-                "meaning");
-
-            var singlePattern = Tracer.Trace(
-                from id in patternId
-                from generativePattern in ReadTill("::=")
-                from generativeMeaning in meaning
-                select new GenerativePattern(id, generativePattern, generativeMeaning),
-                "singlePattern");
-
-            var patterns = Tracer.Trace(Repeat(singlePattern), "patterns");
-
-            return patterns(rulesText).Fold(
-                        parsingError => throw ParsingError($"{parsingError.Text} at {parsingError.Location.Position}"),
-                        result => result.Value);
-        }
 
         private readonly IReadOnlyCollection<ConcretePatternOfUnderstanding> _phraseTypeUnderstanders;
     }

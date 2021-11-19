@@ -8,6 +8,14 @@ namespace Ginger.Runner
 {
     using static DomainApi;
 
+    public sealed record SetDefinition(
+        Func<Term, ComplexTerm> BuildMembershipPredicate,
+        IReadOnlyCollection<Atom> Members)
+    {
+        internal IEnumerable<Rule> ToPrologRules() =>
+            Members.Select(element => Fact(BuildMembershipPredicate(element)));
+    }
+
     public sealed record BusinessRule(
         ComplexTerm Outcome,
         IReadOnlyCollection<ComplexTerm> DesiredSutState,
@@ -36,13 +44,13 @@ namespace Ginger.Runner
     }
 
     public sealed record SutSpecification(
-        IReadOnlyCollection<ComplexTerm> EntityDefinitions,
+        IReadOnlyCollection<SetDefinition> EntityDefinitions,
         IReadOnlyCollection<Rule> Effects,
         IReadOnlyCollection<BusinessRule> BusinessRules,
         IReadOnlyCollection<InitialState> InitialStates)
     {
         public IReadOnlyCollection<Rule> BuildProgram() =>
-            EntityDefinitions.Select(Fact)
+            EntityDefinitions.SelectMany(it => it.ToPrologRules())
                 .Concat(Effects)
                 .Concat(BusinessRules.Select(br => br.ToPrologRule()))
                 .Concat(InitialStates.Select(s => s.ToPrologRule()))

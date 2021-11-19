@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using Prolog.Engine.Miscellaneous;
 
 namespace Prolog.Engine.Parsing
@@ -9,6 +11,7 @@ namespace Prolog.Engine.Parsing
     using TextParsingError = ParsingError<TextInput>;
 
     using static Either;
+    using static MakeCompilerHappy;
     using static MonadicParsing;
     
 #pragma warning disable CA1801 // Review unused parameters
@@ -29,6 +32,13 @@ namespace Prolog.Engine.Parsing
 
         public override string ToString() => 
             Text.Insert(Position, "▲");
+
+        public static TextInput ReadFromEmbeddedResource(string name, Assembly resourceAssembly)
+        {
+            var stream = resourceAssembly.GetManifestResourceStream(name);
+            using var reader = new StreamReader(SuppressCa1062(stream));
+            return new (reader.ReadToEnd());
+        }
     }
 
     internal static class TextParsingPrimitives

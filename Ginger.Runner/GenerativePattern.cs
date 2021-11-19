@@ -1,16 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Prolog.Engine;
 using Prolog.Engine.Miscellaneous;
+using Prolog.Engine.Parsing;
 using Ginger.Runner.Solarix;
-using System.Text.RegularExpressions;
 
 namespace Ginger.Runner
 {
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
 
     using static DomainApi;
+    using static PrologParser;
+    using static MonadicParsing;
+    using static TextParsingPrimitives;
 
     internal sealed record GenerativePattern(string PatternId, string PatternText, SentenceMeaning Meaning)
     {
@@ -351,6 +355,44 @@ namespace Ginger.Runner
                     ComplexTerm ct => AdjustComplexTerm(ct),
                     _ => term
                 };
+        }
+   }
+
+   internal static class GenerativePatternParser
+   {
+        public static IEnumerable<GenerativePattern> ParsePatterns(TextInput rulesText)
+        {
+            var patternId = Tracer.Trace(
+                from unused in Lexem("pattern-")
+                from id in Repeat(Expect(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-'))
+                from unused1 in Lexem(":").Then(Eol)
+                select string.Join(string.Empty, id),
+                "patternId");
+
+            var meaning = Tracer.Trace(
+                Either(
+                    PrologParsers.ProgramParser.Where(rules => rules.Any()),
+                    PrologParsers.PremisesGroupParser.Where(complexTerms => complexTerms.Any())),
+                "meaning");
+
+            var patternText = Tracer.Trace(
+                ReadTill("::="), 
+                "patternText");
+
+            var singlePattern = Tracer.Trace(
+                from id in patternId
+                from generativePattern in patternText
+                from generativeMeaning in meaning
+                select new GenerativePattern(id, generativePattern, generativeMeaning),
+                "singlePattern");
+
+            var patterns = Tracer.Trace(Repeat(singlePattern), "patterns");
+
+            return WholeInput(patterns)
+                    .Invoke(rulesText)
+                    .Fold(
+                        parsingError => throw ParsingError($"{parsingError.Text} at {parsingError.Location.Position}"),
+                        result => result.Value);
         }
    }
 }

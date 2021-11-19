@@ -13,6 +13,9 @@ namespace Ginger.Runner
 
     internal static class TextManipulation
     {
+        public static string StreamlineText(string text) =>
+            text.Replace(Environment.NewLine, " ").Trim();
+
         public static IEnumerable<string> SplitAtUpperCharacters(this string text)
         {
             var currentWordStart = 0;

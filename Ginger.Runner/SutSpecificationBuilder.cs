@@ -16,8 +16,23 @@ namespace Ginger.Runner
     using static TextManipulation;
 
     internal sealed record EntityDefiniton(
-        ComplexTerm Definition, 
-        MayBe<WordOrQuotation<DisambiguatedWord>> FunctorNameWords);
+        IReadOnlyCollection<Atom> ConcreteEntities, 
+        WordOrQuotation<DisambiguatedWord> FunctorNameWords)
+    {
+        public string BuildEntityName() =>
+            FunctorNameWords
+                .IterateDepthFirst()
+                .Select(it => it.Word.Value!.LemmaVersion.Lemma)
+                .BuildIdentifier(Impl.Russian.TextInfo);
+
+        public ComplexTerm BuildEntityPredicate(Term term) =>
+            ComplexTerm(Functor(BuildEntityName(), 1), term);
+
+        public SetDefinition DefineEntitiesSet() =>
+            new SetDefinition(
+                this.BuildEntityPredicate,
+                ConcreteEntities);
+    }
 
     internal sealed class SutSpecificationBuilder
     {
@@ -46,13 +61,40 @@ namespace Ginger.Runner
                             Print(nonFactRules));
             }
 
-            _entityDefinitions.AddRange(
-                facts.Select(fact => 
-                    new EntityDefiniton(
-                        fact.Rule.Conclusion, 
-                        from recipe in fact.Recipe.ConclusionBuildingRecipe.FunctorNameRecipe
+            var theOnlyFact = facts.Single(
+                _ => true, 
+                _ => new InvalidOperationException(
+                    $"Entity definition [{phrasing}] produced several units of defintion. Exactly one defintion of a single set is supported."));
+
+            _entityDefinitions.Add(
+                new EntityDefiniton(
+                        ExtractMembersOfSetThatDefinesEntity(theOnlyFact.Rule.Conclusion), 
+                        (from recipe in theOnlyFact.Recipe.ConclusionBuildingRecipe.FunctorNameRecipe
                         from subTree in recipe.TryLocateCompleteSubTreeOfNameElements(understoodSentence.Sentence)
-                        select subTree)));
+                        select subTree)
+                        .OrElse(() => throw new InvalidOperationException(
+                            $"Could not detect the name of business entity from the following definition [{phrasing}]." + 
+                            "Please reformulate the definition."))));
+
+            static IReadOnlyCollection<Atom> ExtractMembersOfSetThatDefinesEntity(ComplexTerm complexTerm) =>
+                IterableList(
+                    complexTerm.Arguments
+                        .OfType<ComplexTerm>()
+                        .Single(
+                            DomainExtensions.IsList,
+                            lists => new InvalidOperationException(
+                                    $"In order to serve as a set definition, the complex term {Print(complexTerm)} should contain " +
+                                    lists.Count switch
+                                    {
+                                        0 => "a list argument, but it does not.",
+                                        var n => $"should contain a single list argument, while it contains {n} such arguments."
+                                    }))
+                )
+                .Cast<Atom>(nonAtom => 
+                    new InvalidOperationException(
+                        $"In order to serve as a set definition, the complex term {Print(complexTerm)} contain " +
+                        "only atoms in the list of its members. No other types of terms are accepted"))
+                .AsImmutable();
         }
 
         public void DefineEffect(string phrasing)
@@ -172,7 +214,7 @@ namespace Ginger.Runner
 
         public SutSpecification BuildDescription() =>
             new (
-                _entityDefinitions.ConvertAll(ed => ed.Definition),
+                _entityDefinitions.ConvertAll(ed => ed.DefineEntitiesSet()),
                 _effects,
                 _businessRules,
                 _initialStates);
@@ -229,15 +271,10 @@ namespace Ginger.Runner
         {
             var woundEntities = 
                (from entityDefinition in _entityDefinitions
-                where entityDefinition.Definition.Arguments.Count == 1 && 
-                      entityDefinition.Definition.Arguments.Single() is Atom && 
-                      entityDefinition.FunctorNameWords.HasValue
-                group entityDefinition by entityDefinition.Definition.Functor.Name into g
+                group entityDefinition by entityDefinition.BuildEntityName() into g
                 let ed = g.First()
-                from foundStructurePosition in TryFindStructures(ed.FunctorNameWords.Value!, sentence.SentenceStructure)
-                select new WoundEntity(
-                        foundStructurePosition, 
-                        variable => ed.Definition with { Arguments = new (variable) })
+                from foundStructurePosition in TryFindStructures(ed.FunctorNameWords, sentence.SentenceStructure)
+                select new WoundEntity(foundStructurePosition, ed.BuildEntityPredicate)
                 ).AsImmutable();
 
             if (!woundEntities.Any())
@@ -339,7 +376,7 @@ namespace Ginger.Runner
                                     : statements.Map(s => s
                                         .Concat(involvedWoundEntities.Select(we => 
                                             new ComplexTermWithRecipe(
-                                                we.Key.EntityReferenceTemplate(we.Value), 
+                                                we.Key.MembershipPredicate(we.Value), 
                                                 None)))
                                         .AsImmutable());
                         }
@@ -351,7 +388,10 @@ namespace Ginger.Runner
             complexTerm.Arguments.All(argument => argument is Atom || argument is Variable);
 
         private bool IsEntityDefinition(ComplexTerm complexTerm) =>
-            _entityDefinitions.Any(ed => Unification.IsPossible(ed.Definition, complexTerm));
+            _entityDefinitions.Any(ed => 
+                Unification.IsPossible(
+                    ed.BuildEntityPredicate(Prolog.Engine.Variable.MakeNew()),
+                    complexTerm));
 
         private readonly IRussianGrammarParser _grammarParser;
         private readonly SentenceUnderstander _sentenceUnderstander;
@@ -362,6 +402,6 @@ namespace Ginger.Runner
 
         private record WoundSentence(ParsedSentence Sentence, IReadOnlyCollection<WoundEntity> WoundEntities);
 
-        private record WoundEntity(int PositionInSentence, Func<Variable, ComplexTerm> EntityReferenceTemplate);
+        private record WoundEntity(int PositionInSentence, Func<Variable, ComplexTerm> MembershipPredicate);
     }
 }

@@ -5,6 +5,8 @@ using JetBrains.Annotations;
 
 namespace Prolog.Engine.Miscellaneous
 {
+    using static MayBe;
+
     internal static class MayBe
     {
         public static MayBe<T> Some<T>(T value) => 
@@ -61,7 +63,7 @@ namespace Prolog.Engine.Miscellaneous
         public override string? ToString() => 
             HasValue ? Value!.ToString() : "null";
 
-#pragma warning disable CA2225 // Provide a method named 'ToEither' as an alternate for operator op_Implicit
+#pragma warning disable CA2225 // Provide a method named 'ToMayBe' as an alternate for operator op_Implicit
 #pragma warning disable CA1801 // Review unused parameters
         public static implicit operator MayBe<T>([UsedImplicitly] syntacticshugar_NoneProducer unused) =>
 #pragma warning restore CA1801 
@@ -78,8 +80,8 @@ namespace Prolog.Engine.Miscellaneous
 
         public static implicit operator MayBe<T>(MayBe<MayBe<T>> nestedMayBe) =>
             nestedMayBe.HasValue && nestedMayBe.Value!.HasValue 
-                ? MayBe.Some(nestedMayBe.Value!.Value!) 
-                : MayBe.None;
+                ? Some(nestedMayBe.Value!.Value!) 
+                : None;
     }
 
 #pragma warning disable CA1707 // Remove the underscores from type name

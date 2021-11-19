@@ -335,7 +335,7 @@ namespace Ginger.Runner
             Index start)
         =>
             Enumerable
-                .Range(start.Value, elements.Length - start.Value - sequenceOfExactWords.Count + 1)
+                .Range(start.Value, Math.Max(0, elements.Length - start.Value - sequenceOfExactWords.Count + 1))
                 .TryFirst(i => 
                     Enumerable
                         .Range(0, sequenceOfExactWords.Count)

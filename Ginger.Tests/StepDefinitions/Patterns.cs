@@ -17,6 +17,7 @@ namespace Ginger.Tests.StepDefinitions
     using static Either;
     using static MakeCompilerHappy;
     using static MonadicParsing;
+    using static TextManipulation;
     using static TextParsingPrimitives;
     using static PrettyPrinting;
     using static PrologParser;
@@ -40,8 +41,9 @@ namespace Ginger.Tests.StepDefinitions
         public void DefinePatterns(Table patterns)
         {
             SentenceUnderstander = SentenceUnderstander.LoadFromPatterns(
-                from r in patterns.GetMultilineRows()
-                select new GenerativePattern(r["Id"], r["Pattern"], ParseMeaning(r["Meaning"])),
+                CreatePatternsText(
+                    from r in patterns.GetMultilineRows()
+                    select (r["Id"], r["Pattern"], r["Meaning"])),
                 _grammarParser,
                 _russianLexicon,
                 CreateMeaningBuilder());
@@ -155,9 +157,6 @@ namespace Ginger.Tests.StepDefinitions
                 invalidGenerations.Any(),
                 "The following generative patterns produced invalid concrete pattern text " + Environment.NewLine + 
                 string.Join(Environment.NewLine, invalidGenerations));
-
-            string StreamlineText(string text) =>
-                text.Replace(Environment.NewLine, " ").Trim();
         }
 
         [Then("Parsing of the following generative patterns should fail")]
@@ -184,7 +183,7 @@ namespace Ginger.Tests.StepDefinitions
                 {
                     SuppressCa1806(
                         SentenceUnderstander.LoadFromPatterns(
-                            new GenerativePattern[] { new ("unimportant", patternText, Left(Immutable.Empty<Rule>())) },
+                            CreatePatternsText(new [] { ("unimportant", patternText, string.Empty) }),
                             _grammarParser,
                             _russianLexicon,
                             CreateMeaningBuilder()));
@@ -239,6 +238,11 @@ namespace Ginger.Tests.StepDefinitions
             understoodSentence.MeaningWithRecipe.Map2(
                 rules => rules.ConvertAll(r => r.Rule),
                 statements => statements.ConvertAll(s => s.ComplexTerm));
+
+        private static TextInput CreatePatternsText(IEnumerable<(string Id, string Pattern, string Meaning)> patterns) =>
+            new (string.Join(
+                Environment.NewLine, 
+                patterns.Select(p => $"pattern-{p.Id}:{Environment.NewLine}{StreamlineText(p.Pattern)} ::= {StreamlineText(p.Meaning)}")));
 
         private readonly ScenarioContext _scenarioContext;
         private readonly IRussianGrammarParser _grammarParser;
