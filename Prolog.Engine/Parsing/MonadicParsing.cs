@@ -128,6 +128,20 @@ namespace Prolog.Engine.Parsing
                 : from elements in Optional(Repeat(parser, separatorParser, atLeastOnce: true))
                   select elements.OrElse(Array.Empty<TValue>());
 
+        public static Parser<TInput, TRight> TreatLeftAsError<TInput, TLeft, TRight>(
+            Parser<TInput, Either<TLeft, TRight>> parser,
+            Func<TLeft, string> describeProblem)
+        =>
+            input => parser(input) switch
+            {
+                (var error, _, true) => 
+                    Left(error),
+                (_, ((var error, _, true), _), false) => 
+                    Left(new ParsingError<TInput>(describeProblem(error!), input)),
+                (_, var result, false) =>
+                    Right(result.Map<TRight>(either => either.Right!))
+            };
+
         public static Parser<TInput, bool> ForwardDeclaration<TInput, T>(Parser<TInput, T>? unsued) =>
             input => unsued == null 
                 ? Right(Result(true, input)) 

@@ -10,10 +10,12 @@ using Ginger.Runner.Solarix;
 namespace Ginger.Runner
 {
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
+    using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
 
     using static DomainApi;
     using static PrologParser;
     using static MonadicParsing;
+    using static TextManipulation;
     using static TextParsingPrimitives;
 
     internal sealed record GenerativePattern(string PatternId, string PatternText, SentenceMeaning Meaning)
@@ -360,14 +362,27 @@ namespace Ginger.Runner
 
    internal static class GenerativePatternParser
    {
-        public static IEnumerable<GenerativePattern> ParsePatterns(TextInput rulesText)
+        public static IEnumerable<GenerativePattern> ParsePatterns(
+            TextInput rulesText,
+            Func<string, UnderstandingOutcome> buildMeaning)
         {
+            const string PatternIdPrefix = "pattern-";
+
             var patternId = Tracer.Trace(
-                from unused in Lexem("pattern-")
+                from unused in Lexem(PatternIdPrefix)
                 from id in Repeat(Expect(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-'))
                 from unused1 in Lexem(":").Then(Eol)
                 select string.Join(string.Empty, id),
                 "patternId");
+
+            var indirectMeaning = Tracer.Trace(
+                TreatLeftAsError(
+                    from unused in Lexem(MetaUnderstand.Name).Then(Lexem("(%"))
+                    from sentenceInNaturalLanguage in ReadTill("%)")
+                    from unused1 in Lexem("%)")
+                    select buildMeaning(sentenceInNaturalLanguage),
+                    understandingFailures => Print(understandingFailures)),
+                "indirectMeaning");
 
             var meaning = Tracer.Trace(
                 Either(
@@ -391,7 +406,9 @@ namespace Ginger.Runner
             return WholeInput(patterns)
                     .Invoke(rulesText)
                     .Fold(
-                        parsingError => throw ParsingError($"{parsingError.Text} at {parsingError.Location.Position}"),
+                        parsingError => throw ParsingError(
+                            $"{parsingError.Text} at {parsingError.Location.Position} of the following input: " + 
+                            Environment.NewLine + parsingError.Location),
                         result => result.Value);
         }
    }
