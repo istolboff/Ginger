@@ -375,19 +375,39 @@ namespace Ginger.Runner
                 select string.Join(string.Empty, id),
                 "patternId");
 
+            Parser<TextInput, string>? textWithBalancedParenthesis = null;
+            textWithBalancedParenthesis = Tracer.Trace(
+                Repeat(
+                    Or(
+                        from letters in Repeat(Expect(ch => !ch.IsOneOf('(', ')')), atLeastOnce: true)
+                        select string.Join(string.Empty, letters),
+                        from delayUsage in ForwardDeclaration(textWithBalancedParenthesis)
+                        from unused1 in Lexem("(")
+                        from nestedText in textWithBalancedParenthesis!
+                        from unused2 in Lexem(")")
+                        select $"({nestedText})"))
+                .Select(pieces => string.Join(string.Empty, pieces)),
+                "textWithBalancedParenthesis");
+
             var indirectMeaning = Tracer.Trace(
                 TreatLeftAsError(
-                    from unused in Lexem(MetaUnderstand.Name).Then(Lexem("(%"))
-                    from sentenceInNaturalLanguage in ReadTill("%)")
-                    from unused1 in Lexem("%)")
+                    from unused in Lexem(MetaUnderstand.Name).Then(Lexem("("))
+                    from sentenceInNaturalLanguage in textWithBalancedParenthesis
+                    from unused1 in Lexem(")")
                     select buildMeaning(sentenceInNaturalLanguage),
-                    understandingFailures => Print(understandingFailures)),
+                    understandingFailures => Print(understandingFailures))
+                .Select(understandingOutcome => 
+                    understandingOutcome.MeaningWithRecipe.Map2(
+                        rules => rules.ConvertAll(r => r.Rule),
+                        statements => statements.ConvertAll(ct => ct.ComplexTerm))),
                 "indirectMeaning");
 
             var meaning = Tracer.Trace(
-                Either(
-                    PrologParsers.ProgramParser.Where(rules => rules.Any()),
-                    PrologParsers.PremisesGroupParser.Where(complexTerms => complexTerms.Any())),
+                Or(
+                    Either(
+                        PrologParsers.ProgramParser.Where(rules => rules.Any()),
+                        PrologParsers.PremisesGroupParser.Where(complexTerms => complexTerms.Any())),
+                    indirectMeaning),
                 "meaning");
 
             var patternText = Tracer.Trace(

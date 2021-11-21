@@ -56,7 +56,11 @@ namespace Ginger.Runner
             var concreteUnderstanders = new List<ConcretePatternOfUnderstanding>();
             var result = new SentenceUnderstander(concreteUnderstanders);
 
-            foreach (var generativePattern in GenerativePatternParser.ParsePatterns(patternsText))
+            foreach (var generativePattern in GenerativePatternParser.ParsePatterns(
+                                                    patternsText, 
+                                                    sentence => result.Understand(
+                                                                    grammarParser.ParsePreservingQuotes(sentence), 
+                                                                    meaningBuilder)))
             {
                 var concretePatterns = generativePattern
                                         .GenerateConcretePatterns(grammarParser, russianLexicon)

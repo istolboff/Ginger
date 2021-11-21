@@ -145,7 +145,7 @@ namespace Prolog.Engine.Parsing
         public static Parser<TInput, bool> ForwardDeclaration<TInput, T>(Parser<TInput, T>? unsued) =>
             input => unsued == null 
                 ? Right(Result(true, input)) 
-                : throw ProgramLogic.Error("call to ForwardDeclaration() seems to be unnecessary in this spot.");
+                : throw ProgramLogic.Error("call to ForwardDeclaration() seems to be unnecessary at this place.");
 
         public static ParsingResult<TInput, TValue> Result<TInput, TValue>(TValue value, TInput rest) =>
             new (value, rest);
