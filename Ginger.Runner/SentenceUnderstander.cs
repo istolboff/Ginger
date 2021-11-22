@@ -11,9 +11,11 @@ namespace Ginger.Runner
 {
     using MeaningWithRecipe = Either<IReadOnlyCollection<RuleWithRecipe>, IReadOnlyCollection<ComplexTermWithRecipe>>;
     using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
+    using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
     
     using static Either;
     using static MayBe;
+    using static TextManipulation;
 
     internal readonly record struct RuleWithRecipe(Rule Rule, RuleBuildingRecipe Recipe);
 
@@ -55,12 +57,18 @@ namespace Ginger.Runner
         {
             var concreteUnderstanders = new List<ConcretePatternOfUnderstanding>();
             var result = new SentenceUnderstander(concreteUnderstanders);
+            var generativePatterns = 
+                GenerativePatternParser
+                    .ParsePatterns(patternsText)
+                    .Select(parsedPattern =>
+                        new GenerativePattern(
+                            parsedPattern.PatternId,
+                            parsedPattern.PatternText,
+                            parsedPattern.Meaning.Fold(
+                                meaning => meaning,
+                                sentence => UnderstandMeaningInNaturalLanguage(sentence, parsedPattern.PatternId))));
 
-            foreach (var generativePattern in GenerativePatternParser.ParsePatterns(
-                                                    patternsText, 
-                                                    sentence => result.Understand(
-                                                                    grammarParser.ParsePreservingQuotes(sentence), 
-                                                                    meaningBuilder)))
+            foreach (var generativePattern in /* essentially lazy */generativePatterns)
             {
                 var concretePatterns = generativePattern
                                         .GenerateConcretePatterns(grammarParser, russianLexicon)
@@ -103,6 +111,20 @@ namespace Ginger.Runner
             }
 
             return result;
+
+            SentenceMeaning UnderstandMeaningInNaturalLanguage(string sentence, string patternId) =>
+                result
+                    .Understand(grammarParser.ParsePreservingQuotes(sentence), meaningBuilder)
+                    .Fold(
+                        failedAttempts => throw new InvalidOperationException(
+                                $"Failed to understand meaning '{sentence}' in " +
+                                $"pattern {patternId}" +
+                                Environment.NewLine +
+                                Print(failedAttempts)),
+                        understoodSentence =>
+                                understoodSentence!.MeaningWithRecipe.Map2(
+                                    rules => rules.ConvertAll(r => r.Rule),
+                                    statements => statements.ConvertAll(ct => ct.ComplexTerm)));
         }
 
         private static UnderstandingOutcome Understand(

@@ -7,6 +7,7 @@ namespace Prolog.Engine.Parsing
 {
     using static Either;
     using static MayBe;
+    using static PrettyPrinting;
 
     internal readonly record struct ParsingResult<TInput, TValue>(TValue Value, TInput Rest)
     {
@@ -35,7 +36,10 @@ namespace Prolog.Engine.Parsing
                 ++_nestingLevel;
                 var result = parser(input);
                 --_nestingLevel;
-                TraceParsingEvent($"{linePrefix}-{parserName}: {result.Fold(e => $"failed; {e.Text} at {e.Location}", r => r.Value?.ToString())}");
+                var parsingOutcomeDescription = result.Fold(
+                    e => $"failed; {e.Text} at {e.Location}", 
+                    r => Print(r.Value));
+                TraceParsingEvent($"{linePrefix}-{parserName}: {parsingOutcomeDescription}");
                 return result;
             };
 
@@ -127,20 +131,6 @@ namespace Prolog.Engine.Parsing
                   select new[] { firstElement }.Concat(theOtherElements).AsImmutable()
                 : from elements in Optional(Repeat(parser, separatorParser, atLeastOnce: true))
                   select elements.OrElse(Array.Empty<TValue>());
-
-        public static Parser<TInput, TRight> TreatLeftAsError<TInput, TLeft, TRight>(
-            Parser<TInput, Either<TLeft, TRight>> parser,
-            Func<TLeft, string> describeProblem)
-        =>
-            input => parser(input) switch
-            {
-                (var error, _, true) => 
-                    Left(error),
-                (_, ((var error, _, true), _), false) => 
-                    Left(new ParsingError<TInput>(describeProblem(error!), input)),
-                (_, var result, false) =>
-                    Right(result.Map<TRight>(either => either.Right!))
-            };
 
         public static Parser<TInput, bool> ForwardDeclaration<TInput, T>(Parser<TInput, T>? unsued) =>
             input => unsued == null 

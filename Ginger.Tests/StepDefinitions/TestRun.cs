@@ -19,7 +19,6 @@ namespace Ginger.Tests.StepDefinitions
         [BeforeTestRun]
         public static void SetupTestRun(TestContext testContext)
         {
-            while (!System.Diagnostics.Debugger.IsAttached) { System.Threading.Thread.Sleep(3000); }
             var russianGrammarEngine = new SolarixRussianGrammarEngine();
             _russianGrammarParser = new SolarixParserMemoizer(russianGrammarEngine);
             _russianLexicon = russianGrammarEngine;

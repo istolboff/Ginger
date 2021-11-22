@@ -157,6 +157,13 @@ namespace Ginger.Tests.StepDefinitions
                 invalidGenerations.Any(),
                 "The following generative patterns produced invalid concrete pattern text " + Environment.NewLine + 
                 string.Join(Environment.NewLine, invalidGenerations));
+
+
+            static GenerativePattern MakeGenerativePattern(string generativePatternText) =>
+                new (
+                    "unimportant", 
+                    generativePatternText, 
+                    new SentenceMeaning(Array.Empty<Rule>(), default, IsLeft: true));
         }
 
         [Then("Parsing of the following generative patterns should fail")]
@@ -227,12 +234,6 @@ namespace Ginger.Tests.StepDefinitions
             expectedMeaning.Fold(
                 expectedRules => actualMeaning.Fold(expectedRules.SequenceEqual, _ => false),
                 expectedStatements => actualMeaning.Fold(_ => false, expectedStatements.SequenceEqual));
-
-        private static GenerativePattern MakeGenerativePattern(string generativePatternText) =>
-            new (
-                "unimportant", 
-                generativePatternText, 
-                new SentenceMeaning(Array.Empty<Rule>(), default, IsLeft: true));
 
         private static SentenceMeaning GetMeaning(UnderstoodSentence understoodSentence) =>
             understoodSentence.MeaningWithRecipe.Map2(

@@ -10,12 +10,10 @@ using Ginger.Runner.Solarix;
 namespace Ginger.Runner
 {
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
-    using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
 
     using static DomainApi;
     using static PrologParser;
     using static MonadicParsing;
-    using static TextManipulation;
     using static TextParsingPrimitives;
 
     internal sealed record GenerativePattern(string PatternId, string PatternText, SentenceMeaning Meaning)
@@ -358,13 +356,13 @@ namespace Ginger.Runner
                     _ => term
                 };
         }
-   }
+    }
 
-   internal static class GenerativePatternParser
-   {
-        public static IEnumerable<GenerativePattern> ParsePatterns(
-            TextInput rulesText,
-            Func<string, UnderstandingOutcome> buildMeaning)
+    internal readonly record struct ParsedGenerativePattern(string PatternId, string PatternText, Either<SentenceMeaning, string> Meaning);
+
+    internal static class GenerativePatternParser
+    {
+        public static IEnumerable<ParsedGenerativePattern> ParsePatterns(TextInput rulesText)
         {
             const string PatternIdPrefix = "pattern-";
 
@@ -381,7 +379,7 @@ namespace Ginger.Runner
                     Or(
                         from letters in Repeat(Expect(ch => !ch.IsOneOf('(', ')')), atLeastOnce: true)
                         select string.Join(string.Empty, letters),
-                        from delayUsage in ForwardDeclaration(textWithBalancedParenthesis)
+                        //from delayUsage in ForwardDeclaration(textWithBalancedParenthesis)
                         from unused1 in Lexem("(")
                         from nestedText in textWithBalancedParenthesis!
                         from unused2 in Lexem(")")
@@ -390,20 +388,14 @@ namespace Ginger.Runner
                 "textWithBalancedParenthesis");
 
             var indirectMeaning = Tracer.Trace(
-                TreatLeftAsError(
                     from unused in Lexem(MetaUnderstand.Name).Then(Lexem("("))
                     from sentenceInNaturalLanguage in textWithBalancedParenthesis
                     from unused1 in Lexem(")")
-                    select buildMeaning(sentenceInNaturalLanguage),
-                    understandingFailures => Print(understandingFailures))
-                .Select(understandingOutcome => 
-                    understandingOutcome.MeaningWithRecipe.Map2(
-                        rules => rules.ConvertAll(r => r.Rule),
-                        statements => statements.ConvertAll(ct => ct.ComplexTerm))),
-                "indirectMeaning");
+                    select sentenceInNaturalLanguage,
+                    "indirectMeaning");
 
             var meaning = Tracer.Trace(
-                Or(
+                Either(
                     Either(
                         PrologParsers.ProgramParser.Where(rules => rules.Any()),
                         PrologParsers.PremisesGroupParser.Where(complexTerms => complexTerms.Any())),
@@ -418,7 +410,7 @@ namespace Ginger.Runner
                 from id in patternId
                 from generativePattern in patternText
                 from generativeMeaning in meaning
-                select new GenerativePattern(id, generativePattern, generativeMeaning),
+                select new ParsedGenerativePattern(id, generativePattern, generativeMeaning),
                 "singlePattern");
 
             var patterns = Tracer.Trace(Repeat(singlePattern), "patterns");
