@@ -209,6 +209,12 @@ namespace Ginger.Runner.Solarix
         Компаратив2 = GrammarEngineAPI.LIGHT_COMPAR_FORM_RU
     }
 
+    internal enum Animacy
+    {
+        Одушевленный = GrammarEngineAPI.ANIMATIVE_FORM_ru,
+        Неодушевленный = GrammarEngineAPI.INANIMATIVE_FORM_ru
+    }
+
     internal static class Impl
     {
         public static readonly CultureInfo Russian = CultureInfo.GetCultureInfo("ru");
@@ -218,7 +224,7 @@ namespace Ginger.Runner.Solarix
         public static IReadOnlyCollection<GrammarCharacteristics> GrammarCharacteristicsInstances =>
             new GrammarCharacteristics[]
             {
-                new AdjectiveCharacteristics(default, default, default, default, default),
+                new AdjectiveCharacteristics(default, default, default, default, default, default),
                 new VerbCharacteristics(default, default, default, default, default, default, default),
                 new NounCharacteristics(default, default, default),
                 new VerbalNounCharacteristics(default, default, default, string.Empty),
@@ -244,7 +250,8 @@ namespace Ginger.Runner.Solarix
                 { typeof(Tense), GrammarEngineAPI.TENSE_ru },
                 { typeof(ComparisonForm), GrammarEngineAPI.COMPAR_FORM_ru },
                 { typeof(Transitiveness), GrammarEngineAPI.TRANSITIVENESS_ru },
-                { typeof(AdjectiveForm), GrammarEngineAPI.SHORTNESS_ru }
+                { typeof(AdjectiveForm), GrammarEngineAPI.SHORTNESS_ru },
+                { typeof(Animacy), GrammarEngineAPI.FORM_ru }
             };
     }
 
@@ -324,7 +331,8 @@ namespace Ginger.Runner.Solarix
         Number? Number, 
         Gender? Gender, 
         AdjectiveForm AdjectiveForm, 
-        ComparisonForm ComparisonForm) 
+        ComparisonForm ComparisonForm,
+        Animacy? Animacy)
         : GrammarCharacteristics;
 
     internal sealed record VerbCharacteristics(

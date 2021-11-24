@@ -70,7 +70,8 @@ namespace Ginger.Runner.Solarix
                                 TryGetNodeVersionCoordinateState<Number>(hNode, versionIndex),
                                 TryGetNodeVersionCoordinateState<Gender>(hNode, versionIndex),
                                 GetBoolCoordinateState(hNode, versionIndex, GrammarEngineAPI.SHORTNESS_ru, AdjectiveForm.Краткое, AdjectiveForm.Полное),
-                                GetNodeVersionCoordinateState<ComparisonForm>(hNode, versionIndex))
+                                GetNodeVersionCoordinateState<ComparisonForm>(hNode, versionIndex),
+                                TryGetNodeVersionCoordinateState<Animacy>(hNode, versionIndex))
                     },
                     {
                         PartOfSpeech.Наречие,
@@ -196,7 +197,7 @@ namespace Ginger.Runner.Solarix
             var result = GenerateWordForms(
                     entryId, 
                     characteristics.ToCoordIdStateIdPairArray(
-                        (coordId, stateId) => coordId.IsOneOf(GrammarEngineAPI.CASE_ru, GrammarEngineAPI.NUMBER_ru) 
+                        (coordId, stateId) => coordId.IsOneOf(GrammarEngineAPI.CASE_ru, GrammarEngineAPI.NUMBER_ru, GrammarEngineAPI.FORM_ru)
                             ? (coordId, stateId)
                             : default((int, int)?)))
                     .FirstOrDefault();
