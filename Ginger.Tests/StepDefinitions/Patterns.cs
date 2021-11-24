@@ -163,7 +163,8 @@ namespace Ginger.Tests.StepDefinitions
                 new (
                     "unimportant", 
                     generativePatternText, 
-                    new SentenceMeaning(Array.Empty<Rule>(), default, IsLeft: true));
+                    new SentenceMeaning(Array.Empty<Rule>(), default, IsLeft: true),
+                    false);
         }
 
         [Then("Parsing of the following generative patterns should fail")]
@@ -190,7 +191,7 @@ namespace Ginger.Tests.StepDefinitions
                 {
                     SuppressCa1806(
                         SentenceUnderstander.LoadFromPatterns(
-                            CreatePatternsText(new [] { ("unimportant", patternText, string.Empty) }),
+                            CreatePatternsText(new [] { ("unimportant", patternText, "a(b).") }),
                             _grammarParser,
                             _russianLexicon,
                             CreateMeaningBuilder()));

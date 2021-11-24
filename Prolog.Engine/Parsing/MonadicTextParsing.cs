@@ -30,8 +30,11 @@ namespace Prolog.Engine.Parsing
                             _ => Text.Length 
                         });
 
-        public override string ToString() => 
-            Text.Insert(Position, "▲");
+        public override string ToString() =>
+            (Text.Substring(Math.Max(0, Position - StringHalfPortionToDump), Math.Min(StringHalfPortionToDump, Position)) + 
+            "▲" +
+            Text.Substring(Position, Math.Min(StringHalfPortionToDump, Math.Max(0, Text.Length - Position))))
+            .Replace(Environment.NewLine, @"<CR><LF>");
 
         public static TextInput ReadFromEmbeddedResource(string name, Assembly resourceAssembly)
         {
@@ -39,6 +42,8 @@ namespace Prolog.Engine.Parsing
             using var reader = new StreamReader(SuppressCa1062(stream));
             return new (reader.ReadToEnd());
         }
+
+        private const int StringHalfPortionToDump = 32;
     }
 
     internal static class TextParsingPrimitives

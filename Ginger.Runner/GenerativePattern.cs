@@ -12,11 +12,13 @@ namespace Ginger.Runner
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
 
     using static DomainApi;
-    using static PrologParser;
-    using static MonadicParsing;
-    using static TextParsingPrimitives;
+    using static Either;
 
-    internal sealed record GenerativePattern(string PatternId, string PatternText, SentenceMeaning Meaning)
+    internal sealed record GenerativePattern(
+        string PatternId, 
+        string PatternText, 
+        SentenceMeaning Meaning,
+        bool BuiltIndirectly)
     {
         public IEnumerable<(PatternWithMeaning PatternWithMeaning, string PatternId)> GenerateConcretePatterns(
             IRussianGrammarParser grammarParser,
@@ -27,12 +29,13 @@ namespace Ginger.Runner
                                     grammarParser.ParseAnnotatedPreservingQuotes(it.Pattern, russianLexicon), 
                                     it.Meaning, 
                                     grammarParser, 
-                                    russianLexicon)
-                                  .Select((patternWithMeaning, numberOfReplicas) => 
+                                    russianLexicon,
+                                    BuiltIndirectly)
+                                  .Select((patternWithMeaning, numberOfReplicas) =>
                                             new 
                                             { 
-                                                patternWithMeaning, 
-                                                it.IdSuffix, 
+                                                patternWithMeaning,
+                                                it.IdSuffix,
                                                 numberOfReplicas
                                             }))
                 .Select(it => 
@@ -49,7 +52,8 @@ namespace Ginger.Runner
                 AnnotatedSentence pattern,
                 SentenceMeaning meaning,
                 IRussianGrammarParser grammarParser,
-                IRussianLexicon russianLexicon) 
+                IRussianLexicon russianLexicon,
+                bool builtIndirectly) 
             {
                 var plainPattern = PlainPattern().ToImmutable();
 
@@ -97,7 +101,8 @@ namespace Ginger.Runner
 
                                                 return new PatternWithMeaning(
                                                             concretePattern.Disambiguate(russianLexicon, enforceLemmaVersions: true), 
-                                                            concretePatternMeaning);
+                                                            concretePatternMeaning,
+                                                            builtIndirectly);
                                             }))
                                     .OrElse(() => 
                                             new PatternWithMeaning(
@@ -107,18 +112,19 @@ namespace Ginger.Runner
                                                         grammarParser,
                                                         russianLexicon)
                                                     .Disambiguate(russianLexicon, enforceLemmaVersions: true),
-                                                meaning
-                                            )
+                                                meaning,
+                                                builtIndirectly)
                                             .ToImmutable()))
                         .Select(patternWithMeaning => patternWithMeaning with 
                                 {
                                     Meaning = patternWithMeaning.Meaning.Map2(
-                                        JoinMultipleRulesIntoSingleRuleIfConclusionIsTheSameForAllRules,
+                                        rules => 
+                                            JoinMultipleRulesIntoSingleRuleIfConclusionIsTheSameForAllRules(rules),
                                         RemoveDuplicatedComplexTerms)
                                 });
 
                 PatternWithMeaning PlainPattern() =>
-                    new (pattern.Disambiguate(russianLexicon), meaning);
+                    new (pattern.Disambiguate(russianLexicon), meaning, builtIndirectly);
 
                 AnnotatedSentence ReplicateWordInSentence(
                     AnnotatedSentence sentence,
@@ -357,71 +363,4 @@ namespace Ginger.Runner
                 };
         }
     }
-
-    internal readonly record struct ParsedGenerativePattern(string PatternId, string PatternText, Either<SentenceMeaning, string> Meaning);
-
-    internal static class GenerativePatternParser
-    {
-        public static IEnumerable<ParsedGenerativePattern> ParsePatterns(TextInput rulesText)
-        {
-            const string PatternIdPrefix = "pattern-";
-
-            var patternId = Tracer.Trace(
-                from unused in Lexem(PatternIdPrefix)
-                from id in Repeat(Expect(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-'))
-                from unused1 in Lexem(":").Then(Eol)
-                select string.Join(string.Empty, id),
-                "patternId");
-
-            Parser<TextInput, string>? textWithBalancedParenthesis = null;
-            textWithBalancedParenthesis = Tracer.Trace(
-                Repeat(
-                    Or(
-                        from letters in Repeat(Expect(ch => !ch.IsOneOf('(', ')')), atLeastOnce: true)
-                        select string.Join(string.Empty, letters),
-                        //from delayUsage in ForwardDeclaration(textWithBalancedParenthesis)
-                        from unused1 in Lexem("(")
-                        from nestedText in textWithBalancedParenthesis!
-                        from unused2 in Lexem(")")
-                        select $"({nestedText})"))
-                .Select(pieces => string.Join(string.Empty, pieces)),
-                "textWithBalancedParenthesis");
-
-            var indirectMeaning = Tracer.Trace(
-                    from unused in Lexem(MetaUnderstand.Name).Then(Lexem("("))
-                    from sentenceInNaturalLanguage in textWithBalancedParenthesis
-                    from unused1 in Lexem(")")
-                    select sentenceInNaturalLanguage,
-                    "indirectMeaning");
-
-            var meaning = Tracer.Trace(
-                Either(
-                    Either(
-                        PrologParsers.ProgramParser.Where(rules => rules.Any()),
-                        PrologParsers.PremisesGroupParser.Where(complexTerms => complexTerms.Any())),
-                    indirectMeaning),
-                "meaning");
-
-            var patternText = Tracer.Trace(
-                ReadTill("::="), 
-                "patternText");
-
-            var singlePattern = Tracer.Trace(
-                from id in patternId
-                from generativePattern in patternText
-                from generativeMeaning in meaning
-                select new ParsedGenerativePattern(id, generativePattern, generativeMeaning),
-                "singlePattern");
-
-            var patterns = Tracer.Trace(Repeat(singlePattern), "patterns");
-
-            return WholeInput(patterns)
-                    .Invoke(rulesText)
-                    .Fold(
-                        parsingError => throw ParsingError(
-                            $"{parsingError.Text} at {parsingError.Location.Position} of the following input: " + 
-                            Environment.NewLine + parsingError.Location),
-                        result => result.Value);
-        }
-   }
 }

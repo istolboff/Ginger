@@ -3,6 +3,7 @@ using System;
 namespace Prolog.Engine.Miscellaneous
 {
     using static Either;
+    using static MayBe;
 
     internal readonly record struct Either<TLeft, TRight>(TLeft? Left, TRight? Right, bool IsLeft)
     {

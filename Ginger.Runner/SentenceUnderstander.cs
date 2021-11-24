@@ -64,9 +64,14 @@ namespace Ginger.Runner
                         new GenerativePattern(
                             parsedPattern.PatternId,
                             parsedPattern.PatternText,
-                            parsedPattern.Meaning.Fold(
-                                meaning => meaning,
-                                sentence => UnderstandMeaningInNaturalLanguage(sentence, parsedPattern.PatternId))));
+                            Meaning: parsedPattern.Meaning.Fold(
+                                meaning => 
+                                    meaning,
+                                intermediateMeaning => 
+                                    UnderstandIntermediateMeaning(
+                                        intermediateMeaning, 
+                                        parsedPattern.PatternId)),
+                            BuiltIndirectly: parsedPattern.Meaning.IsRight));
 
             foreach (var generativePattern in /* essentially lazy */generativePatterns)
             {
@@ -112,12 +117,17 @@ namespace Ginger.Runner
 
             return result;
 
-            SentenceMeaning UnderstandMeaningInNaturalLanguage(string sentence, string patternId) =>
+            SentenceMeaning UnderstandIntermediateMeaning(
+                IntermediateMeaningSentence intermediateMeaning,
+                string patternId)
+            =>
                 result
-                    .Understand(grammarParser.ParsePreservingQuotes(sentence), meaningBuilder)
+                    .Understand(
+                        intermediateMeaning.ToParsedSentence(grammarParser), 
+                        intermediateMeaning.Enrich(meaningBuilder))
                     .Fold(
                         failedAttempts => throw new InvalidOperationException(
-                                $"Failed to understand meaning '{sentence}' in " +
+                                $"Failed to understand meaning '{intermediateMeaning}' in " +
                                 $"pattern {patternId}" +
                                 Environment.NewLine +
                                 Print(failedAttempts)),

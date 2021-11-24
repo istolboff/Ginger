@@ -137,7 +137,10 @@ namespace Ginger.Runner
 
     internal sealed record SuccessfulUnderstanding(UnderstoodSentence UnderstoodSentence, int UnderstandingConfidenceLevel);
 
-    internal sealed record PatternWithMeaning(DisambiguatedSentence Pattern, SentenceMeaning Meaning);
+    internal sealed record PatternWithMeaning(
+        DisambiguatedSentence Pattern, 
+        SentenceMeaning Meaning, 
+        bool BuiltIndirectly);
 
     internal abstract record ConcretePatternOfUnderstanding(CheckPatternApi PatternChecks)
     {
@@ -167,7 +170,7 @@ namespace Ginger.Runner
             IRussianLexicon russianLexicon,
             SentenceUnderstander sentenceUnderstander)
         {
-            var (pattern, meaning) = patternWithMeaning;
+            var (pattern, meaning, builtIndirectly) = patternWithMeaning;
 
             var allWordsUsedInMeaning = new HashSet<string>(
                 meaning.Fold(
@@ -184,7 +187,8 @@ namespace Ginger.Runner
                         g => g.Key,
                         g => g.Select(it => (it.PositionInSentence, it.Word.Map(word => word.LemmaVersion))).AsImmutable(),
                         RussianIgnoreCase),
-                pattern.Sentence);
+                pattern.Sentence,
+                patternWithMeaning.BuiltIndirectly);
 
             var sentenceElementsCheckers = patternElements.ConvertAll(it => 
                         it.Word.Map(
@@ -476,7 +480,8 @@ namespace Ginger.Runner
 
     internal record PathesToWords(
         IReadOnlyDictionary<string, IReadOnlyCollection<(int PositionInSentence, MayBe<LemmaVersion> LemmaVersion)>> Pathes,
-        string Sentence)
+        string Sentence,
+        bool BuiltIndirectly)
     {
         public NameBuildingRecipe LocateWord(string text, bool capitalizeFirstWord = false) =>
             new (
@@ -497,11 +502,14 @@ namespace Ginger.Runner
                             : new Func<ParsedSentence, string>(parsedSentence => parsedSentence.GetQuotationAt(positionInSentence, ReportException)));
                     Exception ReportException(string message) => PatternBuildingException(message, invalidOperation: true);
                 })
-                .OrElse(() => IsIntroducedVariable(word)
-                    ? new (default(int?), None,_ => word)
-                    : throw PatternBuildingException(
-                        $"Could not find word {word} in the pattern '{Sentence}'. " +
-                        $"Only these words are present: [{string.Join(", ", Pathes.Keys)}]"));
+                .OrElse(() => BuiltIndirectly switch
+                            {
+                                false when IsIntroducedVariable(word) => new (default(int?), None, _ => word),
+                                false => throw PatternBuildingException(
+                                            $"Could not find word {word} in the pattern '{Sentence}'. " +
+                                            $"Only these words are present: [{string.Join(", ", Pathes.Keys)}]"),
+                                true => new NameComponentBuildingRecipe(null, None, _ => word)
+                            });
 
         private static bool IsIntroducedVariable(string word) =>
             TryParseTerm(word).OrElse(() => Atom("a")) is Variable;
