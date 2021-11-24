@@ -1,16 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Prolog.Engine;
 using Prolog.Engine.Miscellaneous;
 using Ginger.Runner.Solarix;
-using System.Text.RegularExpressions;
 
 namespace Ginger.Runner
 {
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
+    using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuildingRecipe>, IReadOnlyCollection<ComplexTermBuildingRecipe>>;
 
     using static DomainApi;
+    using static MayBe;
+    using static TextManipulation;
 
     internal sealed record GenerativePattern(string PatternId, string PatternText, SentenceMeaning Meaning)
     {
@@ -39,6 +42,9 @@ namespace Ginger.Runner
                                     (it.numberOfReplicas > 0 ? $"-{it.numberOfReplicas}" : string.Empty)
                     ));
 
+
+        private static InvalidOperationException Failure(string message) => new (message);
+
         private static class ReplicatableWordPattern
         {
             public static IEnumerable<PatternWithMeaning> Generate(
@@ -47,71 +53,56 @@ namespace Ginger.Runner
                 IRussianGrammarParser grammarParser,
                 IRussianLexicon russianLexicon) 
             {
-                var plainPattern = PlainPattern().ToImmutable();
+                var plainPattern = PlainPattern();
 
                 if (
                     !IsReplicatable(pattern) ||
                     pattern.SentenceStructure.IsQuote // a quote can't be a generative pattern
                     )
                 {
-                    return plainPattern;
+                    return plainPattern.ToImmutable();
                 }
 
                 var replicatableWord = pattern.SentenceStructure
-                    .IterateWordsDepthFirst()
+                    .IterateDepthFirst()
                     .TrySingle(
-                        w => w.Annotations.GenerationHint == GenerationHint.Replicatable,
+                        w => w.Word.HasValue && w.Word.Value!.Annotations.GenerationHint == GenerationHint.Replicatable,
                         replicatableWords => throw Failure(
                             $"Only single replicatable word marked with {NaturalLanguageSentenceMarkup.ReplicatableHintText} is supported. " + 
                             $"In pattern '{pattern.Sentence}' there are {replicatableWords.Count}."));
 
-                return plainPattern
-                        .Concat(
-                            replicatableWord
-                                    .Map(word => 
-                                        Enumerable
-                                            .Range(2, MaximumNumberOfElementsInEnumerations - 1)
-                                            .Select(numberOfReplicas => 
-                                            {
-                                                var concretePattern = ReplicateWordInSentence(pattern, numberOfReplicas);
-                                                var concretePatternMeaning = meaning
-                                                    .Map2(
-                                                        rules => 
-                                                            Enumerable
-                                                                .Range(1, numberOfReplicas)
-                                                                .SelectMany(i => i == 1 
-                                                                            ? rules
-                                                                            : AdjustRulesMeaning(word, rules, i, russianLexicon))
-                                                                .AsImmutable(),
-                                                        statements => 
-                                                            Enumerable
-                                                                .Range(1, numberOfReplicas)
-                                                                .SelectMany(i => i == 1 
-                                                                            ? statements
-                                                                            : AdjustStatementsMeaning(word, statements, i, russianLexicon))
-                                                                .AsImmutable());
+                if (!replicatableWord.HasValue)
+                {
+                    return new[] 
+                    { 
+                        plainPattern,
+                        new PatternWithMeaning(
+                                Pattern: pattern.Transform(
+                                        word => word.Annotations.GenerationHint
+                                                    .Map(_ => MakePlural(word))
+                                                    .OrElse(word.ToString()), 
+                                        grammarParser,
+                                        russianLexicon)
+                                    .Disambiguate(russianLexicon, enforceLemmaVersions: true),
+                                Meaning: meaning) 
+                    };
+                }
 
-                                                return new PatternWithMeaning(
-                                                            concretePattern.Disambiguate(russianLexicon, enforceLemmaVersions: true), 
-                                                            concretePatternMeaning);
-                                            }))
-                                    .OrElse(() => 
-                                            new PatternWithMeaning(
-                                                pattern
-                                                    .Transform(
-                                                        word => word.Annotations.GenerationHint.Map(_ => MakePlural(word)).OrElse(word.ToString()), 
-                                                        grammarParser,
-                                                        russianLexicon)
-                                                    .Disambiguate(russianLexicon, enforceLemmaVersions: true),
-                                                meaning
-                                            )
-                                            .ToImmutable()))
-                        .Select(patternWithMeaning => patternWithMeaning with 
-                                {
-                                    Meaning = patternWithMeaning.Meaning.Map2(
-                                        JoinMultipleRulesIntoSingleRuleIfConclusionIsTheSameForAllRules,
-                                        RemoveDuplicatedComplexTerms)
-                                });
+                var meaningAdjustor = new ReplicatedWordMeaningGenerator(
+                                            meaning, 
+                                            plainPattern.BuildRecipe(grammarParser),
+                                            replicatableWord.Value!,
+                                            russianLexicon);
+
+                return plainPattern.ToImmutable()
+                        .Concat(
+                            Enumerable
+                                .Range(2, MaximumNumberOfElementsInEnumerations - 1)
+                                .Select(numberOfReplicas => 
+                                    new PatternWithMeaning(
+                                        Pattern: ReplicateWordInSentence(pattern, numberOfReplicas)
+                                            .Disambiguate(russianLexicon, enforceLemmaVersions: true), 
+                                        Meaning: meaningAdjustor.GenerateMeaning(numberOfReplicas))));
 
                 PatternWithMeaning PlainPattern() =>
                     new (pattern.Disambiguate(russianLexicon), meaning);
@@ -162,60 +153,13 @@ namespace Ginger.Runner
                                                                             picker => picker.ForPluralForm()) 
                                         }
                     }).ToString();
-
-                static IReadOnlyCollection<Rule> JoinMultipleRulesIntoSingleRuleIfConclusionIsTheSameForAllRules(
-                    IReadOnlyCollection<Rule> rules) 
-                =>
-                    rules.Count > 1 && rules.Select(r => r.Conclusion).Distinct().Count() == 1
-                        ? new[] 
-                            { 
-                                Rule(
-                                    rules.First().Conclusion, 
-                                    from premisIndex in Enumerable.Range(0, rules.First().Premises.Count)
-                                    from differentPremisesAtIndex in rules.Select(r => r.Premises.ElementAt(premisIndex)).Distinct()
-                                    select differentPremisesAtIndex)
-                            }
-                        : rules;
-
-                static IReadOnlyCollection<ComplexTerm> RemoveDuplicatedComplexTerms(
-                    IReadOnlyCollection<ComplexTerm> statements) 
-                => // remove duplicated complex terms, and put repeated ones the righter the more frequent they are
-                    statements
-                        .Select((statement, index) => new { statement, index })
-                        .GroupBy(it => it.statement)
-                        .Select(g => new { g.Key, Count = g.Count(), FirstIndex = g.Min(it => it.index) })
-                        .GroupBy(it => it.Count)
-                        .OrderBy(it => it.Key)
-                        .Select(g => new { g.Key, items = g.OrderBy(it => it.FirstIndex) })
-                        .SelectMany(it => it.items.Select(it1 => it1.Key))
-                        .AsImmutable();
             }
+
+            public static string GetNthReplicaFor(LemmaVersion wordLemma, int i, IRussianLexicon russianLexicon) =>
+                russianLexicon.GenerateWordForm(GetNthReplicaFor(wordLemma, i), wordLemma.PartOfSpeech, wordLemma.Characteristics);
 
             private static bool IsReplicatable(AnnotatedSentence sentence) =>
                 sentence.SentenceStructure.IterateWordsDepthFirst().Any(w => w.Annotations.GenerationHint.HasValue);
-
-            static IReadOnlyCollection<Rule> AdjustRulesMeaning(
-                AnnotatedWord word,
-                IReadOnlyCollection<Rule> singleElementMeaning, 
-                int nthReplication,
-                IRussianLexicon russianLexicon) 
-            => 
-                ReplaceWordInMeaning(
-                    singleElementMeaning, 
-                    wordToBeReplaced: word.GetDisambiguatedLemmaVersion(russianLexicon, enforceLemmaVersions: true, Failure).Lemma, 
-                    wordToReplaceWith: GetNthReplicaFor(word.GetDisambiguatedLemmaVersion(russianLexicon, enforceLemmaVersions: true, Failure), nthReplication));
-
-
-            static IReadOnlyCollection<ComplexTerm> AdjustStatementsMeaning(
-                AnnotatedWord word,
-                IReadOnlyCollection<ComplexTerm> singleElementMeaning, 
-                int nthReplication,
-                IRussianLexicon russianLexicon)
-            => 
-                ReplaceWordInMeaning(
-                    singleElementMeaning, 
-                    wordToBeReplaced: word.GetDisambiguatedLemmaVersion(russianLexicon, enforceLemmaVersions: true, Failure).Lemma, 
-                    wordToReplaceWith: GetNthReplicaFor(word.GetDisambiguatedLemmaVersion(russianLexicon, enforceLemmaVersions: true, Failure), nthReplication));
 
             private static LemmaVersion EnsureMasculine(LemmaVersion lemmaVersion, string word) =>
                 (lemmaVersion.Characteristics.TryGetGender() ?? Gender.Мужской) == Gender.Мужской
@@ -223,9 +167,6 @@ namespace Ginger.Runner
                     : throw Failure(
                         $"'{word}{NaturalLanguageSentenceMarkup.PluralSensitivityHintText}': Слова, переходящие во множественное число при репликации, " +
                         "всегда должны иметь мужской род");
-
-            private static string GetNthReplicaFor(LemmaVersion wordLemma, int i, IRussianLexicon russianLexicon) =>
-                russianLexicon.GenerateWordForm(GetNthReplicaFor(wordLemma, i), wordLemma.PartOfSpeech, wordLemma.Characteristics);
 
             private static string GetNthReplicaFor(LemmaVersion wordLemma, int i) =>
                 WordsForReplication.TryGetValue(wordLemma.PartOfSpeech ?? PartOfSpeech.Существительное, out var words)
@@ -292,65 +233,235 @@ namespace Ginger.Runner
                                         wordToReplaceWith: russianLexicon.GetNeutralForm(word))));
             }
 
+            private static SentenceMeaning ReplaceWordInMeaning(
+                SentenceMeaning meaning, 
+                string wordToBeReplaced,
+                string wordToReplaceWith)
+            => 
+                meaning.Map2(
+                    rules => ReplaceWordInMeaning(
+                                    rules, 
+                                    wordToBeReplaced: wordToBeReplaced, 
+                                    wordToReplaceWith: wordToReplaceWith),
+                    statements => ReplaceWordInMeaning(
+                                    statements, 
+                                    wordToBeReplaced: wordToBeReplaced, 
+                                    wordToReplaceWith: wordToReplaceWith));
+
+            private static IReadOnlyCollection<Rule> ReplaceWordInMeaning(
+                IReadOnlyCollection<Rule> meaning,
+                string wordToBeReplaced,
+                string wordToReplaceWith)
+            {
+                return meaning.Select(AdjustRule).AsImmutable();
+
+                Rule AdjustRule(Rule rule) =>
+                    Rule(
+                        ReplaceWordInMeaning(
+                            new[] { rule.Conclusion }, 
+                            wordToBeReplaced: wordToBeReplaced, 
+                            wordToReplaceWith: wordToReplaceWith)
+                        .Single(), 
+                        ReplaceWordInMeaning(
+                            rule.Premises, 
+                            wordToBeReplaced: wordToBeReplaced, 
+                            wordToReplaceWith: wordToReplaceWith));
+            }
+
+            private static IReadOnlyCollection<ComplexTerm> ReplaceWordInMeaning(
+                IReadOnlyCollection<ComplexTerm> meaning,
+                string wordToBeReplaced,
+                string wordToReplaceWith)
+            {
+                return meaning.Select(AdjustComplexTerm).AsImmutable();
+
+                ComplexTerm AdjustComplexTerm(ComplexTerm complexTerm) =>
+                    complexTerm with { Arguments = new (complexTerm.Arguments.Select(AdjustTerm)) };
+
+                Term AdjustTerm(Term term) =>
+                    term switch
+                    {
+                        Atom atom when atom.Characters.Equals(
+                            wordToBeReplaced,
+                            StringComparison.OrdinalIgnoreCase) => Atom(wordToReplaceWith),
+                        ComplexTerm ct => AdjustComplexTerm(ct),
+                        _ => term
+                    };
+            }
+
             private static readonly Regex FixedWordAlternativesRegex = new (@"∥\(([^)]+)\)", RegexOptions.Compiled);
         }
 
-        private static InvalidOperationException Failure(string message) => new (message);
-
-        private static SentenceMeaning ReplaceWordInMeaning(
-            SentenceMeaning meaning, 
-            string wordToBeReplaced,
-            string wordToReplaceWith)
-        => 
-            meaning.Map2(
-                rules => ReplaceWordInMeaning(
-                                rules, 
-                                wordToBeReplaced: wordToBeReplaced, 
-                                wordToReplaceWith: wordToReplaceWith),
-                statements => ReplaceWordInMeaning(
-                                statements, 
-                                wordToBeReplaced: wordToBeReplaced, 
-                                wordToReplaceWith: wordToReplaceWith));
-
-        private static IReadOnlyCollection<Rule> ReplaceWordInMeaning(
-            IReadOnlyCollection<Rule> meaning,
-            string wordToBeReplaced,
-            string wordToReplaceWith)
+        private sealed class ReplicatedWordMeaningGenerator
         {
-            return meaning.Select(AdjustRule).AsImmutable();
+            private readonly SentenceMeaning _meaning;
+            private readonly IRussianLexicon _russianLexicon;
+            private readonly IReadOnlyDictionary<ComplexTerm, SiteAffectedByReplication> _sitesAffectedByReplication;
+            private readonly LemmaVersion _replicatableWordLemma;
 
-            Rule AdjustRule(Rule rule) =>
-                Rule(
-                    ReplaceWordInMeaning(
-                        new[] { rule.Conclusion }, 
-                        wordToBeReplaced: wordToBeReplaced, 
-                        wordToReplaceWith: wordToReplaceWith)
-                    .Single(), 
-                    ReplaceWordInMeaning(
-                        rule.Premises, 
-                        wordToBeReplaced: wordToBeReplaced, 
-                        wordToReplaceWith: wordToReplaceWith));
-        }
+            public ReplicatedWordMeaningGenerator(
+                SentenceMeaning meaning,
+                MeaningBuildingRecipe meaningRecipe,
+                WordOrQuotation<AnnotatedWord> replicatableWord,
+                IRussianLexicon russianLexicon)
+            {
+                ProgramLogic.Check(replicatableWord.Word.HasValue);
 
-        private static IReadOnlyCollection<ComplexTerm> ReplaceWordInMeaning(
-            IReadOnlyCollection<ComplexTerm> meaning,
-            string wordToBeReplaced,
-            string wordToReplaceWith)
-        {
-            return meaning.Select(AdjustComplexTerm).AsImmutable();
+                _meaning = meaning;
+                _russianLexicon = russianLexicon;
 
-            ComplexTerm AdjustComplexTerm(ComplexTerm complexTerm) =>
-                complexTerm with { Arguments = new (complexTerm.Arguments.Select(AdjustTerm)) };
+                _sitesAffectedByReplication = FindSitesAffectedByReplication(
+                                                meaningRecipe,
+                                                replicatableWord.PositionInSentence,
+                                                meaning);
 
-            Term AdjustTerm(Term term) =>
-                term switch
+                _replicatableWordLemma = replicatableWord.Word.Value!.GetDisambiguatedLemmaVersion(
+                                                russianLexicon, 
+                                                enforceLemmaVersions: true, 
+                                                Failure);
+            }
+
+            public SentenceMeaning GenerateMeaning(int numberOfReplicas)
+            {
+                return _meaning.Map2(
+                    rules => rules
+                        .SelectMany(rule => 
+                            ReplicateRelevantComplexTerms(rule.Conclusion.ToImmutable(), numberOfReplicas)
+                                .Select(conclusion => 
+                                    Rule(
+                                        conclusion, 
+                                        ReplicateRelevantComplexTerms(rule.Premises, numberOfReplicas))))
+                        .AsImmutable(),
+                    statements => 
+                        ReplicateRelevantComplexTerms(statements, numberOfReplicas)
+                        .AsImmutable());
+            }
+
+            private IEnumerable<ComplexTerm> ReplicateRelevantComplexTerms(
+                IEnumerable<ComplexTerm> topLevelComplexTerms, 
+                int numberOfReplicas)
+            =>
+                topLevelComplexTerms
+                    .SelectMany(complexTerm =>
+                        _sitesAffectedByReplication.TryFind(complexTerm)
+                            .Map(affected => Replicate(complexTerm, affected, numberOfReplicas))
+                            .OrElse(complexTerm.ToImmutable()));
+
+            private IEnumerable<ComplexTerm> Replicate(
+                ComplexTerm topLevelComplexTerm,
+                SiteAffectedByReplication affected,
+                int numberOfReplicas)
+            =>
+                affected.Replicate(GenerateReplicatedAtoms(numberOfReplicas)) switch
                 {
-                    Atom atom when atom.Characters.Equals(
-                        wordToBeReplaced,
-                        StringComparison.OrdinalIgnoreCase) => Atom(wordToReplaceWith),
-                    ComplexTerm ct => AdjustComplexTerm(ct),
-                    _ => term
+                    var result when ReferenceEquals(topLevelComplexTerm, affected.Site) => result,
+                    var replicas => replicas.Select(replica => 
+                                affected.Substitute(topLevelComplexTerm, replica))
                 };
+
+            private IEnumerable<Atom> GenerateReplicatedAtoms(int numberOfReplicas)
+            {
+                return Enumerable
+                    .Range(1, numberOfReplicas - 1)
+                    .Select(nthReplication => 
+                        Atom(
+                            ReplicatableWordPattern.GetNthReplicaFor(
+                                _replicatableWordLemma, 
+                                nthReplication + 1,
+                                _russianLexicon)));
+            }
+
+            private static IReadOnlyDictionary<ComplexTerm, SiteAffectedByReplication> FindSitesAffectedByReplication(
+                MeaningBuildingRecipe meaningRecipe, 
+                int replicatableWordPosition,
+                SentenceMeaning meaning)
+            {
+                ProgramLogic.Check(meaning.IsLeft == meaningRecipe.IsLeft);
+                
+                var topLevelSitesWithRecipies = meaningRecipe.IsLeft
+                      ? from pair in meaningRecipe.Left!.ZipStrictly(meaning.Left!)
+                        let ruleRecipe = pair.First
+                        let rule = pair.Second
+                        from topLevel in new[] { (Recipe: ruleRecipe.ConclusionBuildingRecipe, Site: rule.Conclusion) }
+                                            .Concat(ruleRecipe.PremiseBuildingRecipies.ZipStrictly(rule.Premises)
+                                                        .Select(it => (Recipe: it.First, Site: it.Second)))
+                        select topLevel
+                      : meaningRecipe.Right!.ZipStrictly(meaning.Right!).Select(it => (Recipe: it.First, Site: it.Second));
+
+                return (from topLevel in topLevelSitesWithRecipies
+                        let affectedSite = TryLocateAffectedSite(topLevel.Recipe, topLevel.Site, replicatableWordPosition)
+                        where affectedSite.HasValue
+                        select new { topLevel.Site, AffectedSite = affectedSite.Value! })
+                       .ToDictionary(it => it.Site, it => it.AffectedSite);
+                        
+                static MayBe<SiteAffectedByReplication> TryLocateAffectedSite(
+                    ComplexTermBuildingRecipe recipe, 
+                    ComplexTerm complexTerm, 
+                    int wordPosition)
+                =>
+                  recipe.ConcreteBuilder.Fold(
+                        regularRecipe => 
+                            (from pair in regularRecipe.ArgumentBuildingRecipies.ZipStrictly(complexTerm.Arguments)
+                            select pair switch 
+                                    {
+                                        (AtomBuildingRecipe atomRecipe, Term term) when term is not Prolog.Engine.Atom 
+                                        =>
+                                            throw ProgramLogic.Error(
+                                                $"AtomBuildingRecipe {Print(atomRecipe)} should correspond to an Atom in meaning, " + 
+                                                $"but it corresponds to {Print(term)}"),
+
+                                        (AtomBuildingRecipe atomRecipe, Atom atom) when
+                                            atomRecipe.AtomContentBuilder.NameComponentGetters.Count == 1 &&
+                                            atomRecipe.AtomContentBuilder.NameComponentGetters.Single().PositionInSentence == wordPosition
+                                        =>
+                                            Some(PatternBuilder.LogCheckingT(new SiteAffectedByReplication(complexTerm, atom))),
+
+                                        (ComplexTermBuildingRecipe complexTermRecipe, Term term) when term is not Prolog.Engine.ComplexTerm
+                                        =>
+                                            throw ProgramLogic.Error(
+                                                $"ComplexTermBuildingRecipe {Print(complexTermRecipe)} should correspond to a ComplexTerm in meaning, " + 
+                                                $"but it corresponds to {Print(term)}"),
+                                        (ComplexTermBuildingRecipe complexTermRecipe, ComplexTerm complexTerm1)
+                                        =>
+                                            TryLocateAffectedSite(complexTermRecipe, complexTerm1, wordPosition),
+
+                                        _ => None
+                                    })
+                                .TryFirst(affectedSite => affectedSite.HasValue),
+                        _ => None
+                    );
+            }
         }
-   }
+
+        private record SiteAffectedByReplication(ComplexTerm Site, Term ReplicatedArgument)
+        {
+            public IEnumerable<ComplexTerm> Replicate(IEnumerable<Atom> replicatedAtoms) =>
+                Site.IsList()
+                    ? List(IterableList(Site).Concat(replicatedAtoms).Reverse()).ToImmutable()
+                    : Site.ToImmutable().Concat(
+                        replicatedAtoms.Select(replica => 
+                            Site with 
+                            { 
+                                Arguments = new (
+                                    Site.Arguments.Select(arg =>
+                                        ReferenceEquals(arg, ReplicatedArgument) ? replica : arg))
+                            }));
+
+            public ComplexTerm Substitute(ComplexTerm inComplexTerm, ComplexTerm withReplica)
+            {
+                return AdjustComplexTerm(inComplexTerm);
+
+                ComplexTerm AdjustComplexTerm(ComplexTerm complexTerm) =>
+                    complexTerm with { Arguments = new (complexTerm.Arguments.Select(AdjustTerm)) };
+
+                Term AdjustTerm(Term term) =>
+                    term switch
+                    {
+                        ComplexTerm ct when ReferenceEquals(ct, Site) => withReplica,
+                        ComplexTerm ct => AdjustComplexTerm(ct),
+                        _ => term
+                    };
+            }
+        }
+    }
 }

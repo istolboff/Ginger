@@ -128,7 +128,8 @@ namespace Ginger.Runner
             .MapLeft(r => new FailedUnderstandingAttempt(Some(PatternId), r));
 
         private syntacticshugar_EitherFromLeft<FailedUnderstandingAttempt> FailedAttempt(
-            UnderstandingFailureReason reason) =>
+            UnderstandingFailureReason reason)
+        =>
             Left(new FailedUnderstandingAttempt(Some(PatternId), reason));
 
         private static IEnumerable<int> ListWordLemmas(Word word) =>
@@ -137,7 +138,103 @@ namespace Ginger.Runner
 
     internal sealed record SuccessfulUnderstanding(UnderstoodSentence UnderstoodSentence, int UnderstandingConfidenceLevel);
 
-    internal sealed record PatternWithMeaning(DisambiguatedSentence Pattern, SentenceMeaning Meaning);
+    internal sealed record PatternWithMeaning(DisambiguatedSentence Pattern, SentenceMeaning Meaning)
+    {
+        public MeaningBuildingRecipe BuildRecipe(IRussianGrammarParser grammarParser) 
+        {
+            var pathesToWords = new PathesToWords(
+                Pattern.Elements
+                    .GroupBy(it => it.Word.Fold(word => word.LemmaVersion.Lemma, () => it.Content))
+                    .ToDictionary(
+                        g => g.Key,
+                        g => g.Select(it => (it.PositionInSentence, it.Word.Map(word => word.LemmaVersion))).AsImmutable(),
+                        RussianIgnoreCase),
+                Pattern.Sentence);
+
+            return Meaning.Map2(
+                rules => rules.ConvertAll(rule => MakeRuleBuildingRecipe(Pattern, rule, pathesToWords, grammarParser)),
+                statements => statements.ConvertAll(statement => MakeComplexTermBuildingRecipe(Pattern, statement, pathesToWords, grammarParser)));
+        }
+
+        private static RuleBuildingRecipe MakeRuleBuildingRecipe(
+            DisambiguatedSentence pattern,
+            Rule rule,
+            PathesToWords words,
+            IRussianGrammarParser grammarParser)
+        =>
+            new (
+                MakeComplexTermBuildingRecipe(pattern, rule.Conclusion, words, grammarParser),
+                rule.Premises.ConvertAll(premise =>
+                    MakeComplexTermBuildingRecipe(pattern, premise, words, grammarParser)));
+
+        private static ComplexTermBuildingRecipe MakeComplexTermBuildingRecipe(
+            DisambiguatedSentence pattern,
+            ComplexTerm complexTerm,
+            PathesToWords words,
+            IRussianGrammarParser grammarParser)
+        {
+            switch (complexTerm.Functor.Name)
+            {
+                case MetaUnderstand.Name:
+                {
+                    var singleArgument = complexTerm.Arguments.Single(
+                        _ => true, 
+                        _ => MetaModifierError(
+                                $"Meta-modifier '{complexTerm.Functor.Name}' requires exactly one argument."));
+
+                    var quoteTextInPatern = 
+                        ((singleArgument as Atom) 
+                            ?? throw MetaModifierError($"The only argument of {complexTerm.Functor.Name} should be an atom."))
+                            .Characters;
+
+                    return new (Right(new UnderstanderBuildingRecipe(words.LocateSingleWord(quoteTextInPatern))));
+                }
+
+                default:
+                {
+                    var functorRecipe = MakeFunctorBuildingRecipe(complexTerm.Functor, words);
+                    var argumentRecipies = complexTerm.Arguments.ConvertAll(
+                                        arg => MakeTermBuildingRecipe(pattern, arg, words, grammarParser));
+                    return new (Left(new RegularComplexTermBuildingRecipe(functorRecipe, argumentRecipies)));
+                }
+            }
+        }
+
+        private static FunctorBuildingRecipe MakeFunctorBuildingRecipe(
+            FunctorBase functor,
+            PathesToWords words)
+        =>
+            functor switch
+            {
+                var _ when BuiltinPrologFunctors.Contains(functor.Name) || MetaFunctors.Contains(functor.Name) => Left(functor),
+                Functor f => Right((words.LocateWord(f.Name), f.Arity)),
+                _ => throw PatternBuildingException(
+                        $"Cannot handle functor '{functor.Name}' of type {functor.GetType().Name} in meanining pattern.")
+            };
+
+        private static TermBuildingRecipe MakeTermBuildingRecipe(
+            DisambiguatedSentence pattern, 
+            Term term,
+            PathesToWords words,
+            IRussianGrammarParser grammarParser)
+        =>
+            term switch 
+            {
+                Atom atom => 
+                    new AtomBuildingRecipe(words.LocateWord(atom.Characters)),
+                Prolog.Engine.Number number => 
+                    new NumberBuildingRecipe(words.LocateWord(number.Value.ToString(CultureInfo.CurrentCulture))),
+                Variable variable => 
+                    new VariableBuildingRecipe(words.LocateWord(variable.Name, capitalizeFirstWord: true)),
+                ComplexTerm complexTerm =>
+                    MakeComplexTermBuildingRecipe(pattern, complexTerm, words, grammarParser),
+                _ => 
+                    throw PatternBuildingException($"Term {term} is not supported.")
+            };
+
+        private static readonly IReadOnlySet<string> MetaFunctors = 
+            new HashSet<string> { MetaVariable.Name, MetaCall.Name, MetaUnderstand.Name };
+    }
 
     internal abstract record ConcretePatternOfUnderstanding(CheckPatternApi PatternChecks)
     {
@@ -164,8 +261,7 @@ namespace Ginger.Runner
             string patternId, 
             PatternWithMeaning patternWithMeaning,
             IRussianGrammarParser grammarParser,
-            IRussianLexicon russianLexicon,
-            SentenceUnderstander sentenceUnderstander)
+            IRussianLexicon russianLexicon)
         {
             var (pattern, meaning) = patternWithMeaning;
 
@@ -175,10 +271,8 @@ namespace Ginger.Runner
                     statements => statements.SelectMany(ListUsedWords)),
                 RussianIgnoreCase);
 
-            var patternElements = pattern.SentenceStructure.IterateByPosition().AsImmutable();
-
             var pathesToWords = new PathesToWords(
-                patternElements
+                pattern.Elements
                     .GroupBy(it => it.Word.Fold(word => word.LemmaVersion.Lemma, () => it.Content))
                     .ToDictionary(
                         g => g.Key,
@@ -186,14 +280,14 @@ namespace Ginger.Runner
                         RussianIgnoreCase),
                 pattern.Sentence);
 
-            var sentenceElementsCheckers = patternElements.ConvertAll(it => 
+            var sentenceElementsCheckers = pattern.Elements.ConvertAll(it => 
                         it.Word.Map(
                             word => new WordChecker(
                                     word.LemmaVersion, 
                                     ExpectParticularWord: word.IsFixed ||
                                                           !allWordsUsedInMeaning.Contains(word.LemmaVersion.Lemma))));
 
-            var wordsUsedInMeaningTwiceOrMore = patternElements
+            var wordsUsedInMeaningTwiceOrMore = pattern.Elements
                     .Where(it => it.Word.HasValue && allWordsUsedInMeaning.Contains(it.Word.Value!.LemmaVersion.Lemma))
                     .GroupBy(it => it.Word.Value!.LemmaVersion.Lemma, Impl.RussianIgnoreCase)
                     .Where(g => g.HasMoreThanOneElement())
@@ -204,9 +298,7 @@ namespace Ginger.Runner
                     new (patternId, patternWithMeaning.Pattern.Sentence),
                     sentenceElementsCheckers,
                     wordsUsedInMeaningTwiceOrMore,
-                    meaning.Map2(
-                        rules => rules.ConvertAll(rule => MakeRuleBuildingRecipe(pattern, rule, pathesToWords, grammarParser, sentenceUnderstander)),
-                        statements => statements.ConvertAll(statement => MakeComplexTermBuildingRecipe(pattern, statement, pathesToWords, grammarParser, sentenceUnderstander))),
+                    patternWithMeaning.BuildRecipe(grammarParser),
                     russianLexicon);
         }
 
@@ -350,15 +442,13 @@ namespace Ginger.Runner
             string patternId, 
             PatternWithMeaning patternWithMeaning,
             IRussianGrammarParser grammarParser,
-            IRussianLexicon russianLexicon,
-            SentenceUnderstander sentenceUnderstander)
+            IRussianLexicon russianLexicon)
         {
             var regularUnderstander = RegularConcretePatternOfUnderstanding.Create(
                 patternId,
                 patternWithMeaning,
                 grammarParser,
-                russianLexicon,
-                sentenceUnderstander);
+                russianLexicon);
 
             PatternEstablished?.Invoke(patternId, patternWithMeaning.Pattern, patternWithMeaning.Meaning);
             yield return regularUnderstander;
@@ -373,90 +463,11 @@ namespace Ginger.Runner
         public static event Action<string, DisambiguatedSentence, SentenceMeaning>? PatternEstablished;
 
         public static event Action<string, bool?>? PatternRecognitionEvent;
-
+ 
         internal static Exception PatternBuildingException(string message, bool invalidOperation = false) =>
             invalidOperation 
                 ? new InvalidOperationException(message) 
                 : new NotSupportedException(message);
-
-        internal static RuleBuildingRecipe MakeRuleBuildingRecipe(
-            DisambiguatedSentence pattern,
-            Rule rule,
-            PathesToWords words,
-            IRussianGrammarParser grammarParser,
-            SentenceUnderstander sentenceUnderstander)
-        =>
-            new (
-                MakeComplexTermBuildingRecipe(pattern, rule.Conclusion, words, grammarParser, sentenceUnderstander),
-                rule.Premises.ConvertAll(premise =>
-                    MakeComplexTermBuildingRecipe(pattern, premise, words, grammarParser, sentenceUnderstander)));
-
-        internal static ComplexTermBuildingRecipe MakeComplexTermBuildingRecipe(
-            DisambiguatedSentence pattern,
-            ComplexTerm complexTerm,
-            PathesToWords words,
-            IRussianGrammarParser grammarParser,
-            SentenceUnderstander sentenceUnderstander)
-        {
-            switch (complexTerm.Functor.Name)
-            {
-                case MetaUnderstand.Name:
-                {
-                    var singleArgument = complexTerm.Arguments.Single(
-                        _ => true, 
-                        _ => MetaModifierError(
-                                $"Meta-modifier '{complexTerm.Functor.Name}' requires exactly one argument."));
-
-                    var quoteTextInPatern = 
-                        ((singleArgument as Atom) 
-                            ?? throw MetaModifierError($"The only argument of {complexTerm.Functor.Name} should be an atom."))
-                            .Characters;
-
-                    return new (Right(new UnderstanderBuildingRecipe(words.LocateSingleWord(quoteTextInPatern))));
-                }
-
-                default:
-                {
-                    var functorRecipe = MakeFunctorBuildingRecipe(complexTerm.Functor, words);
-                    var argumentRecipies = complexTerm.Arguments.ConvertAll(
-                                        arg => MakeTermBuildingRecipe(pattern, arg, words, grammarParser, sentenceUnderstander));
-                    return new (Left(new RegularComplexTermBuildingRecipe(functorRecipe, argumentRecipies)));
-                }
-            }
-        }
-
-        private static FunctorBuildingRecipe MakeFunctorBuildingRecipe(
-            FunctorBase functor,
-            PathesToWords words)
-        =>
-            functor switch
-            {
-                var _ when BuiltinPrologFunctors.Contains(functor.Name) || MetaFunctors.Contains(functor.Name) => Left(functor),
-                Functor f => Right((words.LocateWord(f.Name), f.Arity)),
-                _ => throw PatternBuildingException(
-                        $"Cannot handle functor '{functor.Name}' of type {functor.GetType().Name} in meanining pattern.")
-            };
-
-        private static TermBuildingRecipe MakeTermBuildingRecipe(
-            DisambiguatedSentence pattern, 
-            Term term,
-            PathesToWords words,
-            IRussianGrammarParser grammarParser,
-            SentenceUnderstander sentenceUnderstander)
-        =>
-            term switch 
-            {
-                Atom atom => 
-                    new AtomBuildingRecipe(words.LocateWord(atom.Characters)),
-                Prolog.Engine.Number number => 
-                    new NumberBuildingRecipe(words.LocateWord(number.Value.ToString(CultureInfo.CurrentCulture))),
-                Variable variable => 
-                    new VariableBuildingRecipe(words.LocateWord(variable.Name, capitalizeFirstWord: true)),
-                ComplexTerm complexTerm =>
-                    MakeComplexTermBuildingRecipe(pattern, complexTerm, words, grammarParser, sentenceUnderstander),
-                _ => 
-                    throw PatternBuildingException($"Term {term} is not supported.")
-            };
 
         internal static bool LogChecking(bool checkSucceeded = true, string? log = null)
         {
@@ -464,15 +475,18 @@ namespace Ginger.Runner
             return checkSucceeded;
         }
 
+        internal static T LogCheckingT<T>(T value)
+        {
+            PatternRecognitionEvent?.Invoke(PrettyPrinting.Print(value), null);
+            return value;
+        }
+
         internal static readonly IReadOnlySet<string> BuiltinPrologFunctors = 
             new HashSet<string>(
                 Builtin.Functors
                     .Concat(Builtin.Rules.Select(r => r.Conclusion.Functor))
                     .Select(f => f.Name));
-
-        private static readonly IReadOnlySet<string> MetaFunctors = 
-            new HashSet<string> { MetaVariable.Name, MetaCall.Name, MetaUnderstand.Name };
-    }
+   }
 
     internal record PathesToWords(
         IReadOnlyDictionary<string, IReadOnlyCollection<(int PositionInSentence, MayBe<LemmaVersion> LemmaVersion)>> Pathes,

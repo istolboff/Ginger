@@ -97,8 +97,7 @@ namespace Ginger.Runner
                                     concretePattern.PatternId,
                                     concretePattern.PatternWithMeaning,
                                     grammarParser,
-                                    russianLexicon,
-                                    result)));
+                                    russianLexicon)));
             }
 
             return result;
