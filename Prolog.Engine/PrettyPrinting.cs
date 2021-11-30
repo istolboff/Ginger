@@ -31,9 +31,9 @@ namespace Prolog.Engine
                 ValueTuple<Term, Term> unification => $"({Print(unification.Item1)}, {Print(unification.Item2)})",
                 Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>> sentenceMeaning => sentenceMeaning.Fold(rules => Print(rules), statements => Print(statements)),
                 string text => text,
+                _ when customPrinters.TryFirst(cp => cp.ArgumentType.IsInstanceOfType(@this)) is (var customPrinter, true) =>
+                    Print(customPrinter.Delegate.DynamicInvoke(@this)),
                 IEnumerable collection => string.Join(enumSeparator, collection.Cast<object>().Select(it => Print(it, enumSeparator, customPrinters))),
-                _ when customPrinters.TryFirst(cp => cp.ArgumentType.IsAssignableFrom(@this?.GetType() ?? typeof(Unit))) is var customPrinter && customPrinter.HasValue =>
-                    Print(customPrinter.Value.Delegate.DynamicInvoke(@this)),
                 _ => @this?.ToString() ?? "NULL"
             };
 

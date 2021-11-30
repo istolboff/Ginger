@@ -1,16 +1,21 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 using JetBrains.Annotations;
 
 namespace Ginger.Runner.Solarix
 {
     internal sealed class DisposableIntPtr : IDisposable 
     {
-        public DisposableIntPtr(IntPtr handle, Action<IntPtr> dispose, string objectName, IntPtr? nullValue = null)
+        public DisposableIntPtr(
+            IntPtr handle, 
+            Action<IntPtr> dispose, 
+            [CallerArgumentExpression("handle")]
+            string? objectName = null)
         {
-            CheckHandle(handle, objectName, nullValue);
+            CheckHandle(handle, objectName!);
             _handle = handle;
             _dispose = dispose;
-            _objectName = objectName;
+            _objectName = objectName!;
         }
 
         public void Dispose()
@@ -30,9 +35,9 @@ namespace Ginger.Runner.Solarix
                 : throw new ObjectDisposedException(@this._objectName);
 
         [AssertionMethod]
-        private static void CheckHandle(IntPtr handle, string objectName, IntPtr? nullValue)
+        private static void CheckHandle(IntPtr handle, string objectName)
         {
-            if (handle == (nullValue ?? IntPtr.Zero))
+            if (handle == IntPtr.Zero)
             {
                 throw new ArgumentNullException(nameof(handle), "Could not create " + objectName);
             }

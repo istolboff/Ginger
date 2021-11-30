@@ -79,8 +79,6 @@ namespace Ginger.Runner
     {
         public static IEnumerable<ParsedGenerativePattern> ParsePatterns(TextInput rulesText)
         {
-            const string PatternIdPrefix = "pattern-";
-
             var patternId = Tracer.Trace(
                 from unused in ReadTill(PatternIdPrefix)
                 from id in ReadTill(":")
@@ -142,7 +140,9 @@ namespace Ginger.Runner
                 select new ParsedGenerativePattern(id, generativePattern, generativeMeaning),
                 "singlePattern");
 
-            var patterns = Tracer.Trace(Repeat(singlePattern), "patterns");
+            var patterns = Tracer.Trace(
+                Repeat(singlePattern), 
+                "patterns");
 
             return WholeInput(patterns)
                     .Invoke(rulesText)
@@ -152,5 +152,7 @@ namespace Ginger.Runner
                             Environment.NewLine + parsingError.Location),
                         result => result.Value);
         }
+
+        public const string PatternIdPrefix = "pattern-";
    }
 }

@@ -4,7 +4,6 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using Prolog.Engine;
 using Prolog.Engine.Miscellaneous;
-using Prolog.Engine.Parsing;
 using Ginger.Runner.Solarix;
 
 namespace Ginger.Runner
@@ -14,7 +13,6 @@ namespace Ginger.Runner
 
     using static DomainApi;
     using static MayBe;
-    using static Either;
     using static TextManipulation;
 
     internal sealed record GenerativePattern(
@@ -92,7 +90,8 @@ namespace Ginger.Runner
                                         grammarParser,
                                         russianLexicon)
                                     .Disambiguate(russianLexicon, enforceLemmaVersions: true),
-                                Meaning: meaning) 
+                                Meaning: meaning,
+                                builtIndirectly) 
                     };
                 }
 
@@ -401,7 +400,7 @@ namespace Ginger.Runner
                         let affectedSite = TryLocateAffectedSite(topLevel.Recipe, topLevel.Site, replicatableWordPosition)
                         where affectedSite.HasValue
                         select new { topLevel.Site, AffectedSite = affectedSite.Value! })
-                       .ToDictionary(it => it.Site, it => it.AffectedSite);
+                       .ToDictionary(it => it.Site, it => it.AffectedSite!);
                         
                 static MayBe<SiteAffectedByReplication> TryLocateAffectedSite(
                     ComplexTermBuildingRecipe recipe, 
@@ -413,7 +412,7 @@ namespace Ginger.Runner
                             (from pair in regularRecipe.ArgumentBuildingRecipies.ZipStrictly(complexTerm.Arguments)
                             select pair switch 
                                     {
-                                        (AtomBuildingRecipe atomRecipe, Term term) when term is not Prolog.Engine.Atom 
+                                        (AtomBuildingRecipe atomRecipe, var term) when term is not Prolog.Engine.Atom
                                         =>
                                             throw ProgramLogic.Error(
                                                 $"AtomBuildingRecipe {Print(atomRecipe)} should correspond to an Atom in meaning, " + 
@@ -425,7 +424,7 @@ namespace Ginger.Runner
                                         =>
                                             Some(PatternBuilder.LogCheckingT(new SiteAffectedByReplication(complexTerm, atom))),
 
-                                        (ComplexTermBuildingRecipe complexTermRecipe, Term term) when term is not Prolog.Engine.ComplexTerm
+                                        (ComplexTermBuildingRecipe complexTermRecipe, var term) when term is not Prolog.Engine.ComplexTerm
                                         =>
                                             throw ProgramLogic.Error(
                                                 $"ComplexTermBuildingRecipe {Print(complexTermRecipe)} should correspond to a ComplexTerm in meaning, " + 

@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -56,25 +54,6 @@ namespace Prolog.Engine.Parsing
             from unsused in SkipWhitespaces.Then(Eof)
             select result;
 
-        public static Parser<TextInput, bool> Eol =>
-            Repeat(Expect(ch => char.IsWhiteSpace(ch) && !Environment.NewLine.Contains(ch)))
-                .Then<TextInput, IReadOnlyCollection<char>, bool>(
-                    input => (input.Position < input.Text.Length && 
-                            string.Compare(
-                                input.Text, 
-                                input.Position, 
-                                Environment.NewLine, 
-                                0, 
-                                Environment.NewLine.Length, 
-                                false, 
-                                CultureInfo.InvariantCulture) == 0)
-                        switch 
-                        { 
-                            true => Right(Result(true, input.Skip(Environment.NewLine.Length))),
-                            false => Left(new TextParsingError("expected to be at the end of line", input))
-                        });
-
-
         public static Parser<TextInput, char> Expect(Func<char, bool> checkChar, bool ignoreCommentCharacter = false) =>
             from ch in ignoreCommentCharacter ? new Parser<TextInput, char>(Read) : ReadSkippingComment
             where checkChar(ch)
@@ -101,14 +80,14 @@ namespace Prolog.Engine.Parsing
                             return MakeResult(matchingCharacters);
                         }
 
-                        var newMatchingCharacters = matchingCharacters + nextChar.Right!.Value.ToString();
+                        var newMatchingCharacters = matchingCharacters + nextChar.Right.Value.ToString();
                         if (lexems.All(l => !l.StartsWith(newMatchingCharacters, StringComparison.Ordinal)))
                         {
                             return MakeResult(matchingCharacters);
                         }
 
                         matchingCharacters = newMatchingCharacters;
-                        input = nextChar.Right!.Rest;
+                        input = nextChar.Right.Rest;
 
                         Either<TextParsingError, ParsingResult<TextInput, string>> MakeResult(string s) =>
                             lexems.Any(l => string.Equals(l, s, StringComparison.Ordinal))

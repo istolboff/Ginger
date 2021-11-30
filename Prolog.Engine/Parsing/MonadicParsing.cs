@@ -68,8 +68,8 @@ namespace Prolog.Engine.Parsing
         public static Parser<TInput, TValue> Where<TInput, TValue>(this Parser<TInput, TValue> parser, Func<TValue, bool> predicate) =>
             input => parser(input) switch 
                         { 
-                            var r when r.IsLeft || predicate(r.Right!.Value) => r,
-                            var r => Left(new ParsingError<TInput>($"Unexpected value {r.Right!.Value}", input)) 
+                            var r when r.IsLeft || predicate(r.Right.Value) => r,
+                            var r => Left(new ParsingError<TInput>($"Unexpected value {r.Right.Value}", input)) 
                         };
 
         public static Parser<TInput, TValue2> Then<TInput, TValue1, TValue2>(this Parser<TInput, TValue1> parser1, Parser<TInput, TValue2> parser2) =>
@@ -112,12 +112,12 @@ namespace Prolog.Engine.Parsing
                     return (!atLeastOnce || result.Any()) switch
                     {
                         true => Right(Result(result.AsImmutable(), input)),
-                        false => Left(nextElement.Left!)
+                        false => Left(nextElement.Left)
                     };
                 }
 
-                result.Add(nextElement.Right!.Value);
-                input = nextElement.Right!.Rest;
+                result.Add(nextElement.Right.Value);
+                input = nextElement.Right.Rest;
             }
         };
 

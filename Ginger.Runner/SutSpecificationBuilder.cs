@@ -16,7 +16,7 @@ namespace Ginger.Runner
     using static TextManipulation;
 
     internal sealed record EntityDefiniton(
-        IReadOnlyCollection<Atom> ConcreteEntities, 
+        Rule Definition,
         WordOrQuotation<DisambiguatedWord> FunctorNameWords)
     {
         public string BuildEntityName() =>
@@ -29,9 +29,7 @@ namespace Ginger.Runner
             ComplexTerm(Functor(BuildEntityName(), 1), term);
 
         public SetDefinition DefineEntitiesSet() =>
-            new SetDefinition(
-                this.BuildEntityPredicate,
-                ConcreteEntities);
+            new (Definition, this.BuildEntityPredicate);
     }
 
     internal sealed class SutSpecificationBuilder
@@ -48,12 +46,17 @@ namespace Ginger.Runner
 
             var rules = understoodSentence.MeaningWithRecipe.Fold(
                         rules => rules,
-                        _ => throw new InvalidOperationException(
+                        statements => throw new InvalidOperationException(
                             "When defining entities, only rule-defining sentences are alowed. " +
-                            $"You're trying to use the sentence '{phrasing}' which is understood as a set of statements."));
+                            $"You're trying to use the sentence '{phrasing}' which is understood " +
+                            "as a set of the following statements: " + Print(statements)));
 
             var (facts, nonFactRules) = rules.Segregate<RuleWithRecipe, RuleWithRecipe, Rule>(
-                                    r => r.Rule.IsFact switch { true => Left(r), _ => Right(r.Rule)});
+                                    r => r.Rule.IsFact switch 
+                                        { 
+                                            true => Left(r),
+                                            _ => Right(r.Rule)
+                                        });
             if (nonFactRules.Any())
             {
                 throw new InvalidOperationException("When defining entities, only facts are allowed. " + 
@@ -61,40 +64,15 @@ namespace Ginger.Runner
                             Print(nonFactRules));
             }
 
-            var theOnlyFact = facts.Single(
-                _ => true, 
-                _ => new InvalidOperationException(
-                    $"Entity definition [{phrasing}] produced several units of defintion. Exactly one defintion of a single set is supported."));
-
-            _entityDefinitions.Add(
-                new EntityDefiniton(
-                        ExtractMembersOfSetThatDefinesEntity(theOnlyFact.Rule.Conclusion), 
-                        (from recipe in theOnlyFact.Recipe.ConclusionBuildingRecipe.FunctorNameRecipe
-                        from subTree in recipe.TryLocateCompleteSubTreeOfNameElements(understoodSentence.Sentence)
-                        select subTree)
-                        .OrElse(() => throw new InvalidOperationException(
-                            $"Could not detect the name of business entity from the following definition [{phrasing}]." + 
-                            "Please reformulate the definition."))));
-
-            static IReadOnlyCollection<Atom> ExtractMembersOfSetThatDefinesEntity(ComplexTerm complexTerm) =>
-                IterableList(
-                    complexTerm.Arguments
-                        .OfType<ComplexTerm>()
-                        .Single(
-                            DomainExtensions.IsList,
-                            lists => new InvalidOperationException(
-                                    $"In order to serve as a set definition, the complex term {Print(complexTerm)} should contain " +
-                                    lists.Count switch
-                                    {
-                                        0 => "a list argument, but it does not.",
-                                        var n => $"should contain a single list argument, while it contains {n} such arguments."
-                                    }))
-                )
-                .Cast<Atom>(nonAtom => 
-                    new InvalidOperationException(
-                        $"In order to serve as a set definition, the complex term {Print(complexTerm)} contain " +
-                        "only atoms in the list of its members. No other types of terms are accepted"))
-                .AsImmutable();
+            _entityDefinitions.AddRange(facts.Select(fact =>
+                    new EntityDefiniton(
+                            fact.Rule,
+                            (from recipe in fact.Recipe.ConclusionBuildingRecipe.FunctorNameRecipe
+                            from subTree in recipe.TryLocateCompleteSubTreeOfNameElements(understoodSentence.Sentence)
+                            select subTree)
+                            .OrElse(() => throw new InvalidOperationException(
+                                $"Could not detect the name of business entity from the following definition [{phrasing}]." + 
+                                "Please reformulate the definition.")))));
         }
 
         public void DefineEffect(string phrasing)

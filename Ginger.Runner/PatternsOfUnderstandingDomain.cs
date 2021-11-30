@@ -152,7 +152,8 @@ namespace Ginger.Runner
                         g => g.Key,
                         g => g.Select(it => (it.PositionInSentence, it.Word.Map(word => word.LemmaVersion))).AsImmutable(),
                         RussianIgnoreCase),
-                Pattern.Sentence);
+                Pattern.Sentence,
+                BuiltIndirectly);
 
             return Meaning.Map2(
                 rules => rules.ConvertAll(rule => MakeRuleBuildingRecipe(Pattern, rule, pathesToWords, grammarParser)),
@@ -266,23 +267,13 @@ namespace Ginger.Runner
             IRussianGrammarParser grammarParser,
             IRussianLexicon russianLexicon)
         {
-            var (pattern, meaning, builtIndirectly) = patternWithMeaning;
+            var (pattern, meaning, _) = patternWithMeaning;
 
             var allWordsUsedInMeaning = new HashSet<string>(
                 meaning.Fold(
                     rules => rules.SelectMany(ListUsedWords), 
                     statements => statements.SelectMany(ListUsedWords)),
                 RussianIgnoreCase);
-
-            var pathesToWords = new PathesToWords(
-                pattern.Elements
-                    .GroupBy(it => it.Word.Fold(word => word.LemmaVersion.Lemma, () => it.Content))
-                    .ToDictionary(
-                        g => g.Key,
-                        g => g.Select(it => (it.PositionInSentence, it.Word.Map(word => word.LemmaVersion))).AsImmutable(),
-                        RussianIgnoreCase),
-                pattern.Sentence,
-                patternWithMeaning.BuiltIndirectly);
 
             var sentenceElementsCheckers = pattern.Elements.ConvertAll(it => 
                         it.Word.Map(
@@ -512,7 +503,7 @@ namespace Ginger.Runner
                         positionInSentence,
                         lemmaVersion,
                         lemmaVersion.HasValue
-                            ? parsedSentence => parsedSentence.GetRelevantLemmaAt(positionInSentence, lemmaVersion.Value!, ReportException).Lemma
+                            ? parsedSentence => parsedSentence.GetRelevantLemmaAt(positionInSentence, lemmaVersion.Value, ReportException).Lemma
                             : new Func<ParsedSentence, string>(parsedSentence => parsedSentence.GetQuotationAt(positionInSentence, ReportException)));
                     Exception ReportException(string message) => PatternBuildingException(message, invalidOperation: true);
                 })
