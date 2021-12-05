@@ -136,12 +136,10 @@ namespace Ginger.Runner
             T startingWith,
             IEqualityComparer<T> comparer)
         =>
-            Sequence
-                .Skip(Location.Start.Value)
-                .Take(Count - length + 1)
-                .Select((element, index) => (element, index: Location.Start.Value + index))
-                .Where(it => comparer.Equals(startingWith, it.element))
-                .Select(it => new Subsequence<T>(Sequence, it.index..(it.index + length)));
+            Enumerable
+                .Range(Location.Start.Value, Count - length + 1)
+                .Where(i => comparer.Equals(startingWith, Sequence[i]))
+                .Select(i => new Subsequence<T>(Sequence, i..(i + length)));
 
         public override string ToString() =>
             string.Join(" ", AsEnumerable());
