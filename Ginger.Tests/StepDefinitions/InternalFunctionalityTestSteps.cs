@@ -170,8 +170,8 @@ namespace Ginger.Tests.StepDefinitions
             public static ExpectedLemmaVersion Parse(string grammarCharacteristics)
             {
                 var identifier = Tracer.Trace(
-                                    Lexem(char.IsLetter, char.IsLetter), 
-                                    "identifier");
+                    Lexem(char.IsLetter, char.IsLetter), 
+                    "identifier");
 
                 var stateChecker = Tracer.Trace(
                     from coordinateTypeName in identifier
@@ -190,7 +190,7 @@ namespace Ginger.Tests.StepDefinitions
                             stateCheckers),
                     "expectedLemmaVersion");
 
-                return expectedLemmaVersion(new TextInput(grammarCharacteristics)).Right!.Value;
+                return expectedLemmaVersion(new TextInput(grammarCharacteristics)).Right.Value;
             }
 
             private static Type FindSolarixType(string typeName) => 

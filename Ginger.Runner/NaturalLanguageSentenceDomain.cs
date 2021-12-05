@@ -363,10 +363,19 @@ namespace Ginger.Runner
         bool IsFixed,
         LinkType? LeafLinkType);
 
-    internal readonly record struct DisambiguatedSentence(string Sentence, string AnnotatedSentence, WordOrQuotation<DisambiguatedWord> SentenceStructure)
+    internal readonly record struct DisambiguatedSentence(
+        string Sentence, 
+        string AnnotatedSentence, 
+        WordOrQuotation<DisambiguatedWord> SentenceStructure)
     {
+        public IReadOnlyCollection<WordOrQuotation<DisambiguatedWord>> Elements => 
+            _elements.Value;
+
         public ParsedSentence AsParsedSentence() =>
             new (Sentence, SentenceStructure.Map(word => new Word(word.LemmaVersion.ToImmutable(), word.LeafLinkType)));
+
+        private readonly Lazy<IReadOnlyCollection<WordOrQuotation<DisambiguatedWord>>> _elements = 
+            new (() => SentenceStructure.IterateByPosition().AsImmutable());
     }
 
     internal static class NaturalLanguageSentenceDomain

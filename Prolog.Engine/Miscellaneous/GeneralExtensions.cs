@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
 namespace Prolog.Engine.Miscellaneous
@@ -16,5 +17,20 @@ namespace Prolog.Engine.Miscellaneous
 
         public static Type RemoveNullability(this Type @this) =>
             Nullable.GetUnderlyingType(@this) ?? @this;
+
+        public static IEqualityComparer<T> ToEqualityComparer<T>(this Func<T, T, bool> compare)
+            where T : notnull
+        =>
+            new EqualityComparerImpl<T>(compare);
+
+        private record EqualityComparerImpl<T>(Func<T, T, bool> Compare) : IEqualityComparer<T>
+            where T : notnull
+        {
+            public bool Equals(T? x, T? y) =>
+                Compare(x!, y!);
+
+            public int GetHashCode([DisallowNull] T obj) => 
+                obj.GetHashCode();
+        }
     }
 }

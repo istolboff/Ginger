@@ -234,6 +234,36 @@ namespace Prolog.Engine.Miscellaneous
                 (accumulator, it) => func(it).Fold(
                     left => (accumulator.Lefts.AddAndReturnSelf(left), accumulator.Rights),
                     right => (accumulator.Lefts, accumulator.Rights.AddAndReturnSelf(right))));
+
+        public static IEnumerable<(T1 First, T2 Second)> ZipStrictly<T1, T2>(
+            this IReadOnlyCollection<T1> @this,
+            IReadOnlyCollection<T2> other)
+        {
+            ProgramLogic.Check(@this.Count == other.Count);
+            return @this.Zip(other);
+        }
+
+        public static IEnumerable<(T1 First, T2 Second)> ZipStrictly<T1, T2>(
+            this IList<T1> @this,
+            IList<T2> other)
+        {
+            ProgramLogic.Check(@this.Count == other.Count);
+            return @this.Zip(other);
+        }
+
+        public static IEnumerable<(T Previous, T Next)> CoupleAdjucent<T>(this IEnumerable<T> @this)
+        {
+            var previous = MakeNone<T>();
+            foreach (var it in @this)
+            {
+                if (previous.HasValue)
+                {
+                    yield return (previous.Value!, it);
+                }
+
+                previous = Some(it);
+            }
+        }
     }
     
     internal static class Immutable

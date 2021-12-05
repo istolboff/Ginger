@@ -19,8 +19,7 @@ namespace Ginger.Runner.Solarix
         {
             _engineHandle = new DisposableIntPtr(
                 GrammarEngine.sol_CreateGrammarEngineW(null), 
-                handle => SuppressCa1806(GrammarEngine.sol_DeleteGrammarEngine(handle)),
-                "GrammarEngine");
+                handle => SuppressCa1806(GrammarEngine.sol_DeleteGrammarEngine(handle)));
 
             var loadStatus = GrammarEngine.sol_LoadDictionaryExW(
                     _engineHandle,
@@ -70,7 +69,8 @@ namespace Ginger.Runner.Solarix
                                 TryGetNodeVersionCoordinateState<Number>(hNode, versionIndex),
                                 TryGetNodeVersionCoordinateState<Gender>(hNode, versionIndex),
                                 GetBoolCoordinateState(hNode, versionIndex, GrammarEngineAPI.SHORTNESS_ru, AdjectiveForm.Краткое, AdjectiveForm.Полное),
-                                GetNodeVersionCoordinateState<ComparisonForm>(hNode, versionIndex))
+                                GetNodeVersionCoordinateState<ComparisonForm>(hNode, versionIndex),
+                                TryGetNodeVersionCoordinateState<Animacy>(hNode, versionIndex))
                     },
                     {
                         PartOfSpeech.Наречие,
@@ -110,15 +110,15 @@ namespace Ginger.Runner.Solarix
                 _knownCoordStateNames = (
                     from it in CoordinateStateTypeToCoordinateIdMap
                     from attributeId in Enum.GetValues(it.Key).Cast<int>()
-                    let coordStateName = GetCoordStateName(it.Value, attributeId)
+                    let coordStateName = GetCoordStateName(_engineHandle, it.Value, attributeId)
                     where !string.IsNullOrEmpty(coordStateName)
                     select (coordStateName, CoordType: it.Key, StateId: attributeId)
                 ).ToDictionary(it => it.coordStateName, it => (it.CoordType, it.StateId), RussianIgnoreCase);
 
-                string GetCoordStateName(int categoryId, int attrId)
+                static string GetCoordStateName(IntPtr engineHandle, int categoryId, int attrId)
                 {
-                    var buffer = CreateBuffer();
-                    SuppressCa1806(GrammarEngine.sol_GetCoordStateName(_engineHandle, categoryId, attrId, buffer));
+                    var buffer = CreateBuffer(engineHandle);
+                    SuppressCa1806(GrammarEngine.sol_GetCoordStateName(engineHandle, categoryId, attrId, buffer));
                     return buffer.ToString();
                 }
         }
@@ -196,7 +196,7 @@ namespace Ginger.Runner.Solarix
             var result = GenerateWordForms(
                     entryId, 
                     characteristics.ToCoordIdStateIdPairArray(
-                        (coordId, stateId) => coordId.IsOneOf(GrammarEngineAPI.CASE_ru, GrammarEngineAPI.NUMBER_ru) 
+                        (coordId, stateId) => coordId.IsOneOf(GrammarEngineAPI.CASE_ru, GrammarEngineAPI.NUMBER_ru, GrammarEngineAPI.FORM_ru)
                             ? (coordId, stateId)
                             : default((int, int)?)))
                     .FirstOrDefault();
@@ -252,7 +252,7 @@ namespace Ginger.Runner.Solarix
 
         public string GetPartOfSpeechName(PartOfSpeech partOfSpeech)
         {
-            var buffer = CreateBuffer();
+            var buffer = CreateBuffer(_engineHandle);
             SuppressCa1806(GrammarEngine.sol_GetClassName(_engineHandle, (int)partOfSpeech, buffer));
             buffer.Append('.');
             return buffer.ToString().ToLower(Russian);
@@ -260,7 +260,7 @@ namespace Ginger.Runner.Solarix
 
         public string GetStateName(int categoryId, int stateId)
         {
-            var buffer = CreateBuffer();
+            var buffer = CreateBuffer(_engineHandle);
             SuppressCa1806(GrammarEngine.sol_GetCoordStateName(_engineHandle, categoryId, stateId, buffer));
             buffer.Append('.');
             return buffer.ToString().ToLower(Russian);
@@ -295,7 +295,7 @@ namespace Ginger.Runner.Solarix
                 {
                     var entryVersionId = item.EntryVersionId;
                     var versionIndex = item.VersionIndex;
-                    var lemma = CreateBuffer();
+                    var lemma = CreateBuffer(_engineHandle);
                     SuppressCa1806(GrammarEngine.sol_GetEntryName(_engineHandle, entryVersionId, lemma));
 
                     var partOfSpeechIndex = GrammarEngine.sol_GetEntryClass(_engineHandle, entryVersionId);
@@ -480,13 +480,13 @@ namespace Ginger.Runner.Solarix
 
         private string GetEntryName(int entryId)
         {
-            var buffer = CreateBuffer();
+            var buffer = CreateBuffer(_engineHandle);
             SuppressCa1806(GrammarEngine.sol_GetEntryName(_engineHandle, entryId, buffer));
             return buffer.ToString();
         }
 
-        private StringBuilder CreateBuffer() =>
-            new (GrammarEngine.sol_MaxLexemLen(_engineHandle));
+        private static StringBuilder CreateBuffer(IntPtr engineHandle) =>
+            new (GrammarEngine.sol_MaxLexemLen(engineHandle));
 
         
         private static string[] WorkaroundForBugWhenSometimesTokenizationDoesNotSplitWords(IEnumerable<string> tokens) =>

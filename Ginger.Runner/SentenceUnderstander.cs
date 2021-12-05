@@ -111,8 +111,7 @@ namespace Ginger.Runner
                                     concretePattern.PatternId,
                                     concretePattern.PatternWithMeaning,
                                     grammarParser,
-                                    russianLexicon,
-                                    result)));
+                                    russianLexicon)));
             }
 
             return result;
@@ -132,7 +131,7 @@ namespace Ginger.Runner
                                 Environment.NewLine +
                                 Print(failedAttempts)),
                         understoodSentence =>
-                                understoodSentence!.MeaningWithRecipe.Map2(
+                                understoodSentence.MeaningWithRecipe.Map2(
                                     rules => rules.ConvertAll(r => r.Rule),
                                     statements => statements.ConvertAll(ct => ct.ComplexTerm)));
         }

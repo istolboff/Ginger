@@ -14,12 +14,10 @@ namespace Ginger.Tests.StepDefinitions
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
     using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
 
-    using static Either;
     using static MakeCompilerHappy;
     using static MonadicParsing;
     using static TextManipulation;
     using static TextParsingPrimitives;
-    using static PrettyPrinting;
     using static PrologParser;
 
     [Binding]
@@ -191,7 +189,7 @@ namespace Ginger.Tests.StepDefinitions
                 {
                     SuppressCa1806(
                         SentenceUnderstander.LoadFromPatterns(
-                            CreatePatternsText(new [] { ("unimportant", patternText, "a(b).") }),
+                            CreatePatternsText(new [] { ("unimportant", patternText, MakeDummyMeaning()) }),
                             _grammarParser,
                             _russianLexicon,
                             CreateMeaningBuilder()));
@@ -200,6 +198,13 @@ namespace Ginger.Tests.StepDefinitions
                 catch (InvalidOperationException exception)
                 {
                     return exception.Message;
+                }
+
+                string MakeDummyMeaning()
+                {
+                    var parsedSentence = _grammarParser.ParseAnnotatedPreservingQuotes(patternText, _russianLexicon);
+                    var words = parsedSentence.SentenceStructure.IterateWordsDepthFirst().Take(2).ToArray();
+                    return $"{words[0].LemmaVersions.First().Lemma}({words[1].LemmaVersions.First().Lemma})";
                 }
             }
         }
@@ -244,7 +249,7 @@ namespace Ginger.Tests.StepDefinitions
         private static TextInput CreatePatternsText(IEnumerable<(string Id, string Pattern, string Meaning)> patterns) =>
             new (string.Join(
                 Environment.NewLine, 
-                patterns.Select(p => $"pattern-{p.Id}:{Environment.NewLine}{StreamlineText(p.Pattern)} ::= {StreamlineText(p.Meaning)}")));
+                patterns.Select(p => $"{GenerativePatternParser.PatternIdPrefix}{p.Id}:{Environment.NewLine}{StreamlineText(p.Pattern)} ::= {StreamlineText(p.Meaning)}")));
 
         private readonly ScenarioContext _scenarioContext;
         private readonly IRussianGrammarParser _grammarParser;

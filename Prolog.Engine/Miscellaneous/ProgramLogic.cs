@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using JetBrains.Annotations;
 
 namespace Prolog.Engine.Miscellaneous
@@ -12,11 +13,14 @@ namespace Prolog.Engine.Miscellaneous
             Error("This switch path appeared to be unreachable when writing the code, yet it actually is reachable afetr all.");
 
         [AssertionMethod]
-        public static void Check(bool condition, string message)
+        public static void Check(
+            bool condition, 
+            [CallerArgumentExpression("condition")]
+            string? message = default)
         {
             if (!condition)
             {
-                throw Error(message);
+                throw Error(message ?? "See callstack for details.");
             }
         }
 

@@ -22,8 +22,8 @@ namespace Prolog.Engine.Miscellaneous
             Func<TValue, MayBe<TIntermediate>> selector,
             Func<TValue, TIntermediate, TValue2> projector) 
         =>
-			@this.HasValue && selector(@this.Value!) is var intermediate && intermediate.HasValue
-				? Some(projector(@this.Value!, intermediate.Value!))
+			@this.HasValue && selector(@this.Value!) is (var intermediate, true)
+				? Some(projector(@this.Value!, intermediate!))
 				: None;
 		
 		public static MayBe<IReadOnlyCollection<T>> LiftOptionality<T>(IReadOnlyCollection<MayBe<T>> sequence) 
@@ -79,8 +79,8 @@ namespace Prolog.Engine.Miscellaneous
             !(@this == value!);
 
         public static implicit operator MayBe<T>(MayBe<MayBe<T>> nestedMayBe) =>
-            nestedMayBe.HasValue && nestedMayBe.Value!.HasValue 
-                ? Some(nestedMayBe.Value!.Value!) 
+            nestedMayBe.HasValue && nestedMayBe.Value.HasValue 
+                ? Some(nestedMayBe.Value.Value!) 
                 : None;
     }
 
