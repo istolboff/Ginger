@@ -7,6 +7,8 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Prolog.Engine
 {
+    using UnificationResult = StructuralEquatableDictionary<Variable, Term>;
+
     using static DomainApi;
 
     internal static class PrettyPrinting
@@ -26,7 +28,8 @@ namespace Prolog.Engine
                 ComplexTerm complexTerm => $"{complexTerm.Functor.Name}({string.Join(',', complexTerm.Arguments.Select(a => Print(a, enumSeparator)))})",
                 Rule fact when !fact.Premises.Any() => $"{Print(fact.Conclusion)}.",
                 Rule rule => $"{Print(rule.Conclusion, enumSeparator)}:-{string.Join(',', rule.Premises.Select(p => Print(p, enumSeparator)))}",
-                UnificationResult unificationResult => unificationResult.Succeeded ? "success(" +  string.Join(" & ",unificationResult.Instantiations.Select(i => $"{Print(i.Key, enumSeparator)} = {Print(i.Value, enumSeparator)}")) + ")" : "no unification possible",
+                UnificationResult instantiations => string.Join(" & ", instantiations.Select(i => $"{Print(i.Key, enumSeparator)} = {Print(i.Value, enumSeparator)}")),
+                MayBe<UnificationResult> unificationResult => unificationResult.Map(instantiations => "success(" + Print(instantiations) + ")").OrElse("no unification possible"),
                 IReadOnlyDictionary<Variable, Term> variableInstantiations => string.Join(", ", variableInstantiations.Select(kvp => $"[{Print(kvp.Key)}] = {Print(kvp.Value)}")),
                 ValueTuple<Term, Term> unification => $"({Print(unification.Item1)}, {Print(unification.Item2)})",
                 Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>> sentenceMeaning => sentenceMeaning.Fold(rules => Print(rules), statements => Print(statements)),

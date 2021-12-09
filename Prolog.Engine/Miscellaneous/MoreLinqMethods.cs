@@ -86,27 +86,6 @@ namespace Prolog.Engine.Miscellaneous
             return result;
         }
 
-        public static (TAccumulate, bool) AggregateIfAll<TSource, TAccumulate>(
-            this IEnumerable<TSource> source,
-            TAccumulate seed,
-            Func<TSource, bool> predicate,
-            Func<TAccumulate, TSource, TAccumulate> func)
-        {
-            using var sourceEnumerator = source.GetEnumerator();
-            var result = seed;
-            while (sourceEnumerator.MoveNext())
-            {
-                if (!predicate(sourceEnumerator.Current))
-                {
-                    return (result, false);
-                }
-
-                result = func(result, sourceEnumerator.Current);
-            }
-
-            return (result, true);
-        }
-
         public static TValue AddAndReturnValue<TKey, TValue>(
             this IDictionary<TKey, TValue> @this, 
             TKey key, 
@@ -124,14 +103,6 @@ namespace Prolog.Engine.Miscellaneous
             @this.TryGetValue(key, out var value) 
                 ? value 
                 : @this.AddAndReturnValue(key, createValue());
-
-        public static IDictionary<TKey, TValue> AddAndReturnSelf<TKey, TValue>(
-            this IDictionary<TKey, TValue> @this, 
-            KeyValuePair<TKey, TValue> item)
-        {
-            @this.Add(item);
-            return @this;
-        }
 
         public static TCollection AddAndReturnSelf<TCollection, TElement>(this TCollection @this, TElement item)
             where TCollection : ICollection<TElement>

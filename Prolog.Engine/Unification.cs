@@ -4,9 +4,13 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Prolog.Engine
 {
+    using UnificationResult = StructuralEquatableDictionary<Variable, Term>;
+
+    using static MayBe;
+
     public static class Unification
     {
-        public static UnificationResult CarryOut(Term leftTerm, Term rightTerm) =>
+        public static MayBe<UnificationResult> CarryOut(Term leftTerm, Term rightTerm) =>
             (leftTerm, rightTerm) switch 
             {
                 (Atom leftAtom, Atom rightAtom) => Result(leftAtom.Equals(rightAtom)),
@@ -16,15 +20,15 @@ namespace Prolog.Engine
                 (_, Variable rightVariable) => Success(rightVariable, leftTerm),
                 (ComplexTerm leftComplexTerm, ComplexTerm rightComplexTerm) =>
                     !leftComplexTerm.Functor.Equals(rightComplexTerm.Functor)
-                        ? Failure
+                        ? None
                         : leftComplexTerm.Arguments
                             .Zip(rightComplexTerm.Arguments)
                             .AggregateWhile(
                                 Success(),
                                 (result, correspondingArguments) => 
                                     result.And(CarryOut(correspondingArguments.Item1, correspondingArguments.Item2)),
-                                result => result.Succeeded),
-                _ => Failure
+                                result => result.HasValue),
+                _ => None
             };
 
         public static bool IsPossible(Term leftTerm, Term rightTerm) =>
@@ -42,18 +46,18 @@ namespace Prolog.Engine
                 _ => false
             };
 
-        public static UnificationResult Result(bool succeeded) => 
-            new (Succeeded: succeeded, Instantiations: new ());
+        public static MayBe<UnificationResult> Result(bool succeeded) => 
+            succeeded ? Some(new UnificationResult()) : None;
 
-        public static UnificationResult Success() => 
+        public static MayBe<UnificationResult> Success() => 
             Result(true);
 
-        public static UnificationResult Success(Variable variable, Term value) =>
-            Success(Enumerable.Repeat(KeyValuePair.Create(variable, value), 1));
+        public static MayBe<UnificationResult> Success(Variable variable, Term value) =>
+            Success(new UnificationResult(Enumerable.Repeat(KeyValuePair.Create(variable, value), 1)));
 
-        public static UnificationResult Success(IEnumerable<KeyValuePair<Variable, Term>> variableInstantiations) => 
-            new (Succeeded: true, Instantiations: new(variableInstantiations));
+        public static MayBe<UnificationResult> Success(IEnumerable<KeyValuePair<Variable, Term>> variableInstantiations) => 
+            Some(new UnificationResult(variableInstantiations));
 
-        public static readonly UnificationResult Failure = Result(false);
+        public static readonly MayBe<UnificationResult> Failure = Result(false);
     }
 }

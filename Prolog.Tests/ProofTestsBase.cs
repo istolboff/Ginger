@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Prolog.Engine;
+using Prolog.Engine.Miscellaneous;
 using Prolog.Engine.Parsing;
 
 namespace Prolog.Tests
 {
+    using UnificationResult = StructuralEquatableDictionary<Variable, Term>;
     using V = Dictionary<Variable, Term>;
 
     using static DomainApi;
@@ -49,12 +51,12 @@ namespace Prolog.Tests
         {
             var erroneousProofs = 
                 (from situation in situations
-                let expectedProofs = situation.ExpectedProofs.Select(Unification.Success).ToArray()
+                let expectedProofs = situation.ExpectedProofs.Select(u => new UnificationResult(u)).ToArray()
                 let actualProofs = Proof.Find(situation.Program, situation.Query).Take(onlyFirstSolution ? 1 : int.MaxValue).ToArray()
                 where !ignoreUnexpectedActualInstantiations
                         ? !expectedProofs.SequenceEqual(actualProofs)
                         : expectedProofs.Length != actualProofs.Length ||
-                          expectedProofs.Zip(actualProofs).Any(it => it.First != RemoveUnlistedInstantiations(it.Second, it.First.Instantiations.Keys))
+                          expectedProofs.Zip(actualProofs).Any(it => it.First != RemoveUnlistedInstantiations(it.Second, it.First.Keys))
                 select new 
                 { 
                     situation.Description,
@@ -69,6 +71,6 @@ namespace Prolog.Tests
         }
 
         private static UnificationResult RemoveUnlistedInstantiations(UnificationResult result, IEnumerable<Variable> keys) =>
-            result with { Instantiations = new (result.Instantiations.Where(kvp => keys.Contains(kvp.Key))) };
+            new (result.Where(kvp => keys.Contains(kvp.Key)));
     }
 }

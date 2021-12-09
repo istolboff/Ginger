@@ -23,7 +23,7 @@ namespace Ginger.Runner
             from proof in Proof.Find(sutDescription.BuildProgram(), query)
             let scenario = new TestScenario(
                 Print(businessRule.Outcome),
-                new (proof.Instantiations[Variable("Route")].CastToList<ComplexTerm>()))
+                new (proof[Variable("Route")].CastToList<ComplexTerm>()))
             group scenario by scenario.ExpectedOutcome into g
             select g)
             .AsImmutable();

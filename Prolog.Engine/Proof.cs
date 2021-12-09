@@ -6,6 +6,8 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Prolog.Engine
 {
+    using UnificationResult = StructuralEquatableDictionary<Variable, Term>;
+
     using static Builtin;
     using static DomainApi;
 
@@ -38,14 +40,14 @@ namespace Prolog.Engine
                         variableInstantiations: ImmutableDictionary.Create<Variable, Term>(),
                         useCutMode: queries.Contains(Cut),
                         nestingLevel: 0)
-                    .Where(result => result.Succeeded)
-                    .Select(result => ResolveInternalInstantiations(result, queryVariableNames)
+                    .Where(result => result.HasValue)
+                    .Select(result => ResolveInternalInstantiations(result.Value!, queryVariableNames)
                                         .Trace(0, "yield Proof"));
         }
 
         public static event Action<string?, int, object>? ProofEvent;
 
-        private static IEnumerable<UnificationResult> FindCore(
+        private static IEnumerable<MayBe<UnificationResult>> FindCore(
                 IReadOnlyDictionary<(string FunctorName, int FunctorArity), IReadOnlyCollection<Rule>> programRules,
                 ImmutableList<ComplexTerm> queries,
                 ImmutableHashSet<string> mentionedVariableNames,
@@ -93,17 +95,17 @@ namespace Prolog.Engine
                                 MetaFunctor metaFunctor => metaFunctor.Invoke(programRules, currentQuery.Arguments),
                                 _ => Unification.CarryOut(currentQuery, ruleWithRenamedVariables.Conclusion)
                             };
-                        if (ruleConclusionUnificationResult.Trace(nestingLevel, "ruleConclusionUnificationResult").Succeeded)
+                        if (ruleConclusionUnificationResult.Trace(nestingLevel, "ruleConclusionUnificationResult").HasValue)
                         {
                             var updatedQueries = queries.RemoveAt(0).InsertRange(0, ruleWithRenamedVariables.Premises);
-                            var updatedQueriesWithSubstitutedVariables = updatedQueries.Select(p => ApplyVariableInstantiations(p, ruleConclusionUnificationResult.Instantiations));
+                            var updatedQueriesWithSubstitutedVariables = updatedQueries.Select(p => ApplyVariableInstantiations(p, ruleConclusionUnificationResult.Value!));
                             var matchingRuleContainsCut = matchingRule.Premises.Contains(Cut);
                             var encounteredAtLeastOneProof = false;
                             foreach (var solution in FindCore(
                                 programRules, 
                                 ImmutableList.CreateRange(updatedQueriesWithSubstitutedVariables),
                                 extendedSetOfMentionedVariableNames.Union(ListAllMentionedVariableNames(ruleWithRenamedVariables.Premises)),
-                                variableInstantiations.AddRange(ruleConclusionUnificationResult.Instantiations),
+                                variableInstantiations.AddRange(ruleConclusionUnificationResult.Value!),
                                 useCutMode: useCutMode || matchingRuleContainsCut,
                                 nestingLevel: nestingLevel + 1))
                             {
@@ -205,20 +207,19 @@ namespace Prolog.Engine
                 _ => term
             };
 
-        private static UnificationResult ResolveInternalInstantiations(UnificationResult result, IReadOnlySet<string> variableNames) =>
-            (result with 
-            { 
-                Instantiations = new (
-                    result.Instantiations
-                        .Where(it => variableNames.Contains(it.Key.Name))
-                        .Select(it => KeyValuePair.Create(
-                                        it.Key, 
-                                        ApplyVariableInstantiationsCore(
-                                            it.Value, 
-                                            result.Instantiations, 
-                                            keepUninstantiatedVariables: false)))
-                )
-            });
+        private static UnificationResult ResolveInternalInstantiations(
+            UnificationResult instantiations, 
+            IReadOnlySet<string> variableNames) 
+        =>
+            new (
+                instantiations
+                    .Where(it => variableNames.Contains(it.Key.Name))
+                    .Select(it => KeyValuePair.Create(
+                                    it.Key, 
+                                    ApplyVariableInstantiationsCore(
+                                        it.Value, 
+                                        instantiations, 
+                                        keepUninstantiatedVariables: false))));
 
         private static IEnumerable<Rule> CheckProgramRules(IReadOnlyCollection<Rule> programRules) =>
             programRules

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Prolog.Engine.Miscellaneous;
 
-
 namespace Prolog.Engine
 {
     using static DomainApi;
@@ -34,7 +33,7 @@ namespace Prolog.Engine
 
         private static readonly ComplexTermFactory NotEqual = StandardPredicate(
             @"\=", 
-            (left, right) => Unification.Result(!Unification.CarryOut(left, right).Succeeded));
+            (left, right) => Unification.Result(!Unification.CarryOut(left, right).HasValue));
 
         private static readonly ComplexTermFactory GreaterThan = StandardPredicate(
             ">",
@@ -91,7 +90,7 @@ namespace Prolog.Engine
                                             (state.UnificationResult.And(Unification.CarryOut(listElement, matchingTerm)),
                                              state.MatchedElements.AddAndReturnSelf(matchingTerm)))
                                         .OrElse(() => (Unification.Failure, state.MatchedElements)),
-                                state => state.UnificationResult.Succeeded)
+                                state => state.UnificationResult.HasValue)
                             .UnificationResult,
                     _ => throw TypeError("both parameters of 'subset' predicate should be lists")
                 });
@@ -111,7 +110,7 @@ namespace Prolog.Engine
                                     IterableList(deleteList)
                                         .Where(t => !state.MatchedElements.Contains(t))
                                         .Select(t => new { t, unification = Unification.CarryOut(term, t).And(state.UnificationResult) })
-                                        .TryFirst(it => it.unification.Succeeded)
+                                        .TryFirst(it => it.unification.HasValue)
                                         .Map(it => (it.unification, state.MatchedElements.AddAndReturnSelf(it.t), state.ResultingList))
                                         .OrElse(() => (state.UnificationResult, state.MatchedElements, Dot(term, state.ResultingList))))
                             .Apply(state => Unification.Success(resultList, ReverseList(state.ResultingList))
@@ -172,7 +171,7 @@ namespace Prolog.Engine
                     l, 
                     !solutions.Any()
                         ? EmptyList
-                        : List(solutions.Select(s => Proof.ApplyVariableInstantiationsCore(o, s.Instantiations)).ToArray()));
+                        : List(solutions.Select(instantiations => Proof.ApplyVariableInstantiationsCore(o, instantiations)).ToArray()));
             });
 
         private static ComplexTerm Member(Term element, Term list) =>

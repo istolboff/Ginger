@@ -46,7 +46,7 @@ namespace Prolog.Engine.Miscellaneous
             new (hasValue ? Unit.Instance : default, hasValue);
     }
 
-    internal readonly record struct MayBe<T>(T? Value, bool HasValue)
+    public readonly record struct MayBe<T>(T? Value, bool HasValue)
     {
         public TResult Fold<TResult>(Func<T, TResult> convert, Func<TResult> getDefaultValue) =>
             HasValue ? convert(Value!) : getDefaultValue();
@@ -68,6 +68,11 @@ namespace Prolog.Engine.Miscellaneous
         public static implicit operator MayBe<T>([UsedImplicitly] syntacticshugar_NoneProducer unused) =>
 #pragma warning restore CA1801 
             new (default, false);
+
+        public static implicit operator MayBe<T>(MayBe<MayBe<T>> nestedMayBe) =>
+            nestedMayBe.HasValue && nestedMayBe.Value!.HasValue 
+                ? Some(nestedMayBe.Value!.Value!) 
+                : None;
 #pragma warning restore CA2225
 
         public static bool operator == (MayBe<T> @this, T value) =>
@@ -77,16 +82,11 @@ namespace Prolog.Engine.Miscellaneous
 
         public static bool operator != (MayBe<T> @this, T value) =>
             !(@this == value!);
-
-        public static implicit operator MayBe<T>(MayBe<MayBe<T>> nestedMayBe) =>
-            nestedMayBe.HasValue && nestedMayBe.Value.HasValue 
-                ? Some(nestedMayBe.Value.Value!) 
-                : None;
     }
 
 #pragma warning disable CA1707 // Remove the underscores from type name
 // ReSharper disable InconsistentNaming
-    internal readonly record struct syntacticshugar_NoneProducer;
+    public readonly record struct syntacticshugar_NoneProducer;
 // ReSharper restore InconsistentNaming    
 #pragma warning restore CA1707
 }

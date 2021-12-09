@@ -2,13 +2,16 @@ using System;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Prolog.Engine;
+using Prolog.Engine.Miscellaneous;
 using Prolog.Engine.Parsing;
 
 namespace Prolog.Tests
 {
+    using UnificationResult = StructuralEquatableDictionary<Variable, Term>;
+    using V = System.Collections.Generic.Dictionary<Variable, Term>;
+
     using static DomainApi;
 
-    using V = System.Collections.Generic.Dictionary<Variable, Term>;
     
     [TestClass]
     public class UnificationTests
@@ -18,11 +21,11 @@ namespace Prolog.Tests
         [TestMethod]
         public void ConstantsUnification()
         {
-            Assert.IsTrue(Unification.CarryOut(Atom("some-atom"), Atom("some-atom")).Succeeded);
-            Assert.IsFalse(Unification.CarryOut(Atom("some-atom"), Atom("some-other-atom")).Succeeded);
-            Assert.IsTrue(Unification.CarryOut(Number(42), Number(42)).Succeeded);
-            Assert.IsFalse(Unification.CarryOut(Number(42), Number(21)).Succeeded);
-            Assert.IsFalse(Unification.CarryOut(Atom("2"), Number(2)).Succeeded);
+            Assert.IsTrue(Unification.CarryOut(Atom("some-atom"), Atom("some-atom")).HasValue);
+            Assert.IsFalse(Unification.CarryOut(Atom("some-atom"), Atom("some-other-atom")).HasValue);
+            Assert.IsTrue(Unification.CarryOut(Number(42), Number(42)).HasValue);
+            Assert.IsFalse(Unification.CarryOut(Number(42), Number(21)).HasValue);
+            Assert.IsFalse(Unification.CarryOut(Atom("2"), Number(2)).HasValue);
         }
 
         // If term1 is a variable and term2 is any type of term, then term1 and term2 unify, 
@@ -42,7 +45,7 @@ namespace Prolog.Tests
                 let variable = Variable("X")
                 from arguments in new (Term, Term)[] { (variable, term), (term, variable) }
                 let unification = Unification.CarryOut(arguments.Item1, arguments.Item2)
-                where !unification.Succeeded || !unification.Instantiations[variable].Equals(term)
+                where !unification.HasValue || !unification.Value![variable].Equals(term)
                 select new { arguments.Item1, arguments.Item2, Unification = unification })
                 .ToList();
 
@@ -125,7 +128,7 @@ namespace Prolog.Tests
                 from termPair in test.TermPairs
                 from arguments in new[] { termPair, (termPair.Item2, termPair.Item1) }
                 let unification = CarryOutUnification(arguments)
-                where !unification.Succeeded || !unification.Equals(test.ExpectedUnification)
+                where !unification.HasValue || !unification.Equals(test.ExpectedUnification)
                 select new { arguments.Item1, arguments.Item2, test.ExpectedUnification, ActualUnification = unification })
                 .ToList();
 
@@ -157,7 +160,7 @@ namespace Prolog.Tests
                 }
                 from arguments in new[] { termPair, (termPair.Item2, termPair.Item1) }
                 let unification = CarryOutUnification(arguments)
-                where unification.Succeeded
+                where unification.HasValue
                 select new { Arguments = arguments, Unification = unification })
                 .ToList();
 
@@ -189,7 +192,7 @@ namespace Prolog.Tests
             Assert.IsFalse(wrongUnifications.Any(), string.Join(Environment.NewLine, wrongUnifications));
         }
 
-        private static UnificationResult CarryOutUnification((string First, string Second) expressions) =>
+        private static MayBe<UnificationResult> CarryOutUnification((string First, string Second) expressions) =>
             Unification.CarryOut(
                 PrologParser.ParseTerm(expressions.First), 
                 PrologParser.ParseTerm(expressions.Second));
