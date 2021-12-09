@@ -17,7 +17,10 @@ namespace Ginger.Runner
     using static MayBe;
     using static TextManipulation;
 
-    internal readonly record struct RuleWithRecipe(Rule Rule, RuleBuildingRecipe Recipe);
+    internal readonly record struct RuleWithRecipe(Rule Rule, RuleBuildingRecipe Recipe)
+    {
+        public MayBe<(UnificationResult Unification, IReadOnlyDictionary<string, TermBuildingRecipe> recipies)> TryUnify(Rule withRule) => string.Empty;
+    }
 
     internal readonly record struct ComplexTermWithRecipe(ComplexTerm ComplexTerm, MayBe<ComplexTermBuildingRecipe> Recipe);
 

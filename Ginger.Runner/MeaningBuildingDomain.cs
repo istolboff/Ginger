@@ -35,7 +35,7 @@ namespace Ginger.Runner
 
     internal sealed record RegularComplexTermBuildingRecipe(
         FunctorBuildingRecipe FunctorBuildingRecipe, 
-        IReadOnlyCollection<TermBuildingRecipe> ArgumentBuildingRecipies);
+        StructuralEquatableArray<TermBuildingRecipe> ArgumentBuildingRecipies);
 
     internal sealed record UnderstanderBuildingRecipe(NameComponentBuildingRecipe QuoteLocator);
 

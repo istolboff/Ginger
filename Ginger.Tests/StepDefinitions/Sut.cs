@@ -142,7 +142,7 @@ namespace Ginger.Tests.StepDefinitions
                 }
             }
 
-            return sutDescriptionBuilder.BuildDescription();
+            return sutDescriptionBuilder.BuildSpecification();
         }
 
         private readonly ScenarioContext _scenarioContext;

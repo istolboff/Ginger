@@ -17,19 +17,16 @@ namespace Ginger.Runner
 
     internal sealed record EntityDefiniton(
         Rule Definition,
-        WordOrQuotation<DisambiguatedWord> FunctorNameWords)
+        IReadOnlyCollection<LemmaVersion> EntityNameComponents,
+        IReadOnlyCollection<LemmaVersion> ConcreteInstances)
     {
         public string BuildEntityName() =>
-            FunctorNameWords
-                .IterateDepthFirst()
-                .Select(it => it.Word.Value!.LemmaVersion.Lemma)
+            EntityNameComponents
+                .Select(it => it.Lemma)
                 .BuildIdentifier(Impl.Russian.TextInfo);
 
         public ComplexTerm BuildEntityPredicate(Term term) =>
             ComplexTerm(Functor(BuildEntityName(), 1), term);
-
-        public SetDefinition DefineEntitiesSet() =>
-            new (Definition, this.BuildEntityPredicate);
     }
 
     internal sealed class SutSpecificationBuilder
@@ -64,15 +61,15 @@ namespace Ginger.Runner
                             Print(nonFactRules));
             }
 
-            _entityDefinitions.AddRange(facts.Select(fact =>
-                    new EntityDefiniton(
-                            fact.Rule,
-                            (from recipe in fact.Recipe.ConclusionBuildingRecipe.FunctorNameRecipe
-                            from subTree in recipe.TryLocateCompleteSubTreeOfNameElements(understoodSentence.Sentence)
-                            select subTree)
-                            .OrElse(() => throw new InvalidOperationException(
-                                $"Could not detect the name of business entity from the following definition [{phrasing}]." + 
-                                "Please reformulate the definition.")))));
+            _entityDefinitions.AddRange(facts.Select(ExtractDefinitionFromClassicalSetDescription));
+
+            static EntityDefiniton ExtractDefinitionFromClassicalSetDescription(RuleWithRecipe fact) =>
+                fact.TryUnify("множество(Имярек, Элементы).") switch
+                {
+                    (var (_, recipies), true) => new EntityDefiniton(fact.Rule, recipies["Имярек"], IterableList(recipies["Элементы"])),
+                    _ => throw new InvalidOperationException(
+                            "Определение бизнес-сущности обязано иметь вид <множество(имярек, [элементы-множества]).>")
+                };
         }
 
         public void DefineEffect(string phrasing)
@@ -190,9 +187,9 @@ namespace Ginger.Runner
                     stateComponents => new InitialState(stateComponents.ConvertAll(sc => sc.ComplexTerm)).ToImmutable()));
         }
 
-        public SutSpecification BuildDescription() =>
+        public SutSpecification BuildSpecification() =>
             new (
-                _entityDefinitions.ConvertAll(ed => ed.DefineEntitiesSet()),
+                _entityDefinitions.ConvertAll(ed => new SetDefinition(ed.Definition)),
                 _effects,
                 _businessRules,
                 _initialStates);

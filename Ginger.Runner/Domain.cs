@@ -8,7 +8,7 @@ namespace Ginger.Runner
 {
     using static DomainApi;
 
-    public sealed record SetDefinition(Rule Definition, Func<Term, ComplexTerm> BuildMembershipPredicate);
+    public sealed record SetDefinition(Rule Definition);
 
     public sealed record BusinessRule(
         ComplexTerm Outcome,
