@@ -44,7 +44,7 @@ namespace Prolog.Engine.Miscellaneous
             new (hasValue ? Unit.Instance : default, hasValue);
     }
 
-    internal readonly record struct MayBe<T>(T? Value, bool HasValue)
+    public readonly record struct MayBe<T>(T? Value, bool HasValue)
     {
         public TResult Fold<TResult>(Func<T, TResult> convert, Func<TResult> getDefaultValue) =>
             HasValue ? convert(Value!) : getDefaultValue();
@@ -61,11 +61,16 @@ namespace Prolog.Engine.Miscellaneous
         public override string? ToString() => 
             HasValue ? Value!.ToString() : "null";
 
-#pragma warning disable CA2225 // Provide a method named 'ToEither' as an alternate for operator op_Implicit
+#pragma warning disable CA2225 // Provide a method named 'ToMayBe' as an alternate for operator op_Implicit
 #pragma warning disable CA1801 // Review unused parameters
         public static implicit operator MayBe<T>([UsedImplicitly] syntacticshugar_NoneProducer unused) =>
 #pragma warning restore CA1801 
             new (default, false);
+
+        public static implicit operator MayBe<T>(MayBe<MayBe<T>> nestedMayBe) =>
+            nestedMayBe.HasValue && nestedMayBe.Value!.HasValue 
+                ? MayBe.Some(nestedMayBe.Value!.Value!) 
+                : MayBe.None;
 #pragma warning restore CA2225
 
         public static bool operator == (MayBe<T> @this, T value) =>
@@ -75,16 +80,11 @@ namespace Prolog.Engine.Miscellaneous
 
         public static bool operator != (MayBe<T> @this, T value) =>
             !(@this == value!);
-
-        public static implicit operator MayBe<T>(MayBe<MayBe<T>> nestedMayBe) =>
-            nestedMayBe.HasValue && nestedMayBe.Value!.HasValue 
-                ? MayBe.Some(nestedMayBe.Value!.Value!) 
-                : MayBe.None;
     }
 
 #pragma warning disable CA1707 // Remove the underscores from type name
 // ReSharper disable InconsistentNaming
-    internal readonly record struct syntacticshugar_NoneProducer;
+    public readonly record struct syntacticshugar_NoneProducer;
 // ReSharper restore InconsistentNaming    
 #pragma warning restore CA1707
 }

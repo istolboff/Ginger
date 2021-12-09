@@ -5,6 +5,8 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Prolog.Engine
 {
+    using UnificationResult = StructuralEquatableDictionary<Variable, Term>;
+
 #pragma warning disable SA1313 // ParameterNamesMustBeginWithLowerCaseLetter
     public abstract record Term
     {
@@ -29,9 +31,9 @@ namespace Prolog.Engine
     public sealed record Functor(string Name, int Arity) : FunctorBase(Name, Arity);
 
 #pragma warning disable CA1801 // Review unused parameters
-    internal sealed record BinaryPredicate(string Name, int Arity, Func<IReadOnlyList<Term>, UnificationResult> Invoke) : FunctorBase(Name, Arity);
+    internal sealed record BinaryPredicate(string Name, int Arity, Func<IReadOnlyList<Term>, MayBe<UnificationResult>> Invoke) : FunctorBase(Name, Arity);
 
-    internal sealed record MetaFunctor(string Name, int Arity, Func<IReadOnlyDictionary<(string FunctorName, int FunctorArity), IReadOnlyCollection<Rule>>, IReadOnlyList<Term>, UnificationResult> Invoke) : FunctorBase(Name, Arity);
+    internal sealed record MetaFunctor(string Name, int Arity, Func<IReadOnlyDictionary<(string FunctorName, int FunctorArity), IReadOnlyCollection<Rule>>, IReadOnlyList<Term>, MayBe<UnificationResult>> Invoke) : FunctorBase(Name, Arity);
 #pragma warning restore CA1801
 
     public sealed record ComplexTerm(FunctorBase Functor, StructuralEquatableArray<Term> Arguments) 
@@ -48,7 +50,5 @@ namespace Prolog.Engine
     {
         public bool IsFact => !Premises.Any();
     }
-
-    public readonly record struct UnificationResult(bool Succeeded, StructuralEquatableDictionary<Variable, Term> Instantiations);
 #pragma warning restore SA1313
 }
