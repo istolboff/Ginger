@@ -9,6 +9,7 @@ using System.Reflection;
 
 namespace Ginger.Runner
 {
+    using UnificationResult = StructuralEquatableDictionary<Variable, Term>;
     using MeaningWithRecipe = Either<IReadOnlyCollection<RuleWithRecipe>, IReadOnlyCollection<ComplexTermWithRecipe>>;
     using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
     using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;

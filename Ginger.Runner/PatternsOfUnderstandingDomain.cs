@@ -199,7 +199,7 @@ namespace Ginger.Runner
                     var functorRecipe = MakeFunctorBuildingRecipe(complexTerm.Functor, words);
                     var argumentRecipies = complexTerm.Arguments.ConvertAll(
                                         arg => MakeTermBuildingRecipe(pattern, arg, words, grammarParser));
-                    return new (Left(new RegularComplexTermBuildingRecipe(functorRecipe, argumentRecipies)));
+                    return new (Left(new RegularComplexTermBuildingRecipe(functorRecipe, new (argumentRecipies))));
                 }
             }
         }

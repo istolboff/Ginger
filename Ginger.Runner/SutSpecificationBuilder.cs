@@ -5,6 +5,7 @@ using System.Linq;
 using Ginger.Runner.Solarix;
 using Prolog.Engine;
 using Prolog.Engine.Miscellaneous;
+using Prolog.Engine.Parsing;
 
 namespace Ginger.Runner
 {
@@ -64,10 +65,15 @@ namespace Ginger.Runner
             _entityDefinitions.AddRange(facts.Select(ExtractDefinitionFromClassicalSetDescription));
 
             static EntityDefiniton ExtractDefinitionFromClassicalSetDescription(RuleWithRecipe fact) =>
-                fact.TryUnify("множество(Имярек, Элементы).") switch
+                fact.TryUnify(PrologParser.ParseProgram("множество(Имярек, Элементы).").Single()) switch
                 {
-                    (var (_, recipies), true) => new EntityDefiniton(fact.Rule, recipies["Имярек"], IterableList(recipies["Элементы"])),
-                    _ => throw new InvalidOperationException(
+                    (var (_, recipies), true) => 
+                        new EntityDefiniton(
+                            fact.Rule, 
+                            recipies["Имярек"], 
+                            IterableList(recipies["Элементы"])),
+                    _ => 
+                        throw new InvalidOperationException(
                             "Определение бизнес-сущности обязано иметь вид <множество(имярек, [элементы-множества]).>")
                 };
         }
