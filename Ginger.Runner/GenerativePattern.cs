@@ -8,7 +8,6 @@ using Ginger.Runner.Solarix;
 
 namespace Ginger.Runner
 {
-    using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
     using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuildingRecipe>, IReadOnlyCollection<ComplexTermBuildingRecipe>>;
 
     using static DomainApi;

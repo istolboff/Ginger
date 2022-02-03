@@ -10,7 +10,6 @@ using Ginger.Runner.Solarix;
 namespace Ginger.Runner
 {
     using UnderstandingAttemptOutcome = Either<FailedUnderstandingAttempt, SuccessfulUnderstanding>;
-    using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
     using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuildingRecipe>, IReadOnlyCollection<ComplexTermBuildingRecipe>>;
     using FunctorBuildingRecipe = Either<FunctorBase /* BuiltIn Functor */, (NameBuildingRecipe FunctorNameBuildingRecipe, int Arity) /* Regular Functor building recipe */>;
 
@@ -23,6 +22,10 @@ namespace Ginger.Runner
     using static Prolog.Engine.Parsing.PrologParser;
 
     internal sealed record FailedUnderstandingAttempt(MayBe<string> PatternId, UnderstandingFailureReason FailureReason);
+
+    internal sealed record UnderstandingFailure(
+        ParsedSentence Sentence, 
+        IReadOnlyCollection<FailedUnderstandingAttempt> FailedAttempts);
 
     internal enum NumberMismatchReason
     {
@@ -43,7 +46,7 @@ namespace Ginger.Runner
     internal sealed record MultipleUnderstandingFailureReasons(StructuralEquatableArray<UnderstandingFailureReason> Reasons) : UnderstandingFailureReason
     {
         public static UnderstandingFailureReason CreateFrom(IReadOnlyCollection<UnderstandingFailureReason> reasons) =>
-            reasons.Count == 1 
+            reasons.Count == 1
                 ? reasons.Single()
                 : new MultipleUnderstandingFailureReasons(
                     new StructuralEquatableArray<UnderstandingFailureReason>(reasons));

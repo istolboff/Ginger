@@ -17,4 +17,7 @@
     <ProjectReference Include="..\Ginger.Runner\Ginger.Runner.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Ginger.Runner\DomainAliases.cs" />
+  </ItemGroup>
 </Project>

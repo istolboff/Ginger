@@ -36,8 +36,11 @@ Background:
     |     |        'state-description'                            |   @variable(∥, состояние),                                |
     |     |                                                       |   [@understand('state-description')]).                    |
     |-----|-------------------------------------------------------|-----------------------------------------------------------|
+    | 9   | ~если~ 'условие', ~то~ 'cледствие'                    | @understand('cледствие') :-                               |
+    |     |                                                       |                    @understand('условие').                |
+    |-----|-------------------------------------------------------|-----------------------------------------------------------|
 
-@Ignore
+
 Scenario: Wolf-Goat-Cabbage riddle solving
    Given SUT is described as follows
     | Type                | Phrasing                                                                                      |

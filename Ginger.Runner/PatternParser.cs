@@ -8,8 +8,6 @@ using Ginger.Runner.Solarix;
 
 namespace Ginger.Runner
 {
-    using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
-    
     using static Either;
     using static MonadicParsing;
     using static PrologParser;

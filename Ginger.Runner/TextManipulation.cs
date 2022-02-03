@@ -58,7 +58,9 @@ namespace Ginger.Runner
                     value, 
                     enumSeparator ?? Environment.NewLine,
                     Prolog.Engine.PrettyPrinting.CustomPrinter((FailedUnderstandingAttempt failedAttempt) => 
-                        $"{failedAttempt.PatternId}: {TextManipulation.Print(failedAttempt.FailureReason)}"),
+                        $"   PatternId\t{failedAttempt.PatternId}: {TextManipulation.Print(failedAttempt.FailureReason)}"),
+                    Prolog.Engine.PrettyPrinting.CustomPrinter((WrongNumberOfElements r) =>
+                        $"PatternText: {r.PatternText}; WrongNumberOfElements(Expected={r.ExpectedNumber}, Actual={r.ActualNumber}, Reason={r.MismatchReason})"),
                     Prolog.Engine.PrettyPrinting.CustomPrinter((MultipleUnderstandingFailureReasons r) =>
                         "MultipleUnderstandingFailureReasons [" + Environment.NewLine + "\t" +
                         TextManipulation.Print(r.Reasons).Replace(Environment.NewLine, Environment.NewLine + "\t") + 

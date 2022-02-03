@@ -8,8 +8,6 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Ginger.Runner
 {
-    using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
-
     using static DomainApi;
     using static Either;
     using static MayBe;
@@ -221,7 +219,7 @@ namespace Ginger.Runner
             IEnumerable<FailedUnderstandingAttempt> failedUnderstandingAttempts)
         {
             return new InvalidOperationException(
-                $"Could not understand the phrase {phrasing}:{Environment.NewLine}" + 
+                $"Could not understand the phrase{Environment.NewLine}\t{phrasing}:{Environment.NewLine}" + 
                 Print(failedUnderstandingAttempts));
         }
 

@@ -3,15 +3,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using Prolog.Engine;
 using Prolog.Engine.Miscellaneous;
 using Prolog.Engine.Parsing;
 using Ginger.Runner.Solarix;
-using Prolog.Engine;
 
 namespace Ginger.Runner
 {
     using MeaningWithRecipe = Either<IReadOnlyCollection<RuleWithRecipe>, IReadOnlyCollection<ComplexTermWithRecipe>>;
-    using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
     
     using static Either;
     using static MakeCompilerHappy;

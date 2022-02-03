@@ -11,7 +11,6 @@ namespace Ginger.Runner
     using MeaningWithRecipe = Either<IReadOnlyCollection<RuleWithRecipe>, IReadOnlyCollection<ComplexTermWithRecipe>>;
     using FunctorBuildingRecipe = Either<FunctorBase /* BuiltIn Functor */, (NameBuildingRecipe FunctorNameBuildingRecipe, int Arity) /* Regular Functor building recipe */>;
     using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuildingRecipe>, IReadOnlyCollection<ComplexTermBuildingRecipe>>;
-    using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
 
     using static DomainApi;
     using static Either;
@@ -126,28 +125,28 @@ namespace Ginger.Runner
         =>
             LiftFailures(
                 meaningBuildingRecipe.Map2(
-                ruleRecipes => @this.BuildAllMeaningRules(@this, ruleRecipes, sentence),
-                statementRecipes => @this.BuildAllMeaningStatements(@this, statementRecipes, sentence)));
+                    ruleRecipes => @this.BuildAllMeaningRules(@this, ruleRecipes, sentence),
+                    statementRecipes => @this.BuildAllMeaningStatements(@this, statementRecipes, sentence)));
 
         private static Either<FailedUnderstandingAttempt, IReadOnlyCollection<RuleWithRecipe>> BuildAllMeaningRulesCore(
             MeaningBuilder @this, 
             IReadOnlyCollection<RuleBuildingRecipe> ruleRecipes,
             ParsedSentence sentence) 
         => 
-        GatherBuiltElements(
-          ruleRecipes.ConvertAll(recipe => 
-             @this.BuildRule(@this, recipe, sentence)
-             .Map(rule => new RuleWithRecipe(rule, recipe))));
+            GatherBuiltElements(
+                ruleRecipes.ConvertAll(recipe => 
+                    @this.BuildRule(@this, recipe, sentence)
+                    .Map(rule => new RuleWithRecipe(rule, recipe))));
 
         private static Either<FailedUnderstandingAttempt, IReadOnlyCollection<ComplexTermWithRecipe>> BuildAllMeaningStatementsCore(
             MeaningBuilder @this, 
             IReadOnlyCollection<ComplexTermBuildingRecipe> statementRecipes, 
             ParsedSentence sentence)
         =>
-         GatherBuiltElements(
-              statementRecipes.ConvertAll(recipe => 
-                 @this.BuildComplexTerm(@this, recipe, sentence)
-                 .Map(complexTerm => new ComplexTermWithRecipe(complexTerm, Some(recipe)))));
+            GatherBuiltElements(
+                statementRecipes.ConvertAll(recipe => 
+                    @this.BuildComplexTerm(@this, recipe, sentence)
+                    .Map(complexTerm => new ComplexTermWithRecipe(complexTerm, Some(recipe)))));
 
         private static Either<FailedUnderstandingAttempt, Rule> BuildRuleCore(MeaningBuilder @this, RuleBuildingRecipe recipe, ParsedSentence sentence) 
         =>

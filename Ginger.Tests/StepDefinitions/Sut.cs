@@ -10,8 +10,6 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Ginger.Tests.StepDefinitions
 {
-    using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
-
     using static Either;
     using static Prolog.Engine.Parsing.PrologParser;
     using static PrettyPrinting;

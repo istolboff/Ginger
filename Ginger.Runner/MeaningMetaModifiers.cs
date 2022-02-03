@@ -7,8 +7,7 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Ginger.Runner
 {
-    using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
-    using ComplexTermAdjuster = Func<ComplexTerm, Either<IReadOnlyCollection<FailedUnderstandingAttempt>, ComplexTerm>>;
+    using ComplexTermAdjuster = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, Func<ComplexTerm, ComplexTerm>>;
     
     using static DomainApi;
     using static Either;
@@ -16,23 +15,6 @@ namespace Ginger.Runner
     using static MeaningBuilder;
     using static MetaVariable;
     using static PrettyPrinting;
-
-    internal sealed record MetaCallFirstParameterShouldBeMetaVariable(ComplexTerm CallDetails) 
-        : UnderstandingFailureReason;
-
-    internal enum MetaUnderstandFailureReason
-    { 
-        MetaUnderstandExpectsSingleArgument,
-        MetaUnderstandExpectsSingleArgumentOfTypeAtom,
-        UnderstandingProducedRulesInsteadOfComplexTerms,
-        IncompatibleNumberOfArgumentsAfterInlining,
-        UnderstandingOfTopmostElementProducedSeveralComplexTermsInsteadOfSingleOne
-    }
-
-    internal sealed record MetaUnderstandFailure(
-        MetaUnderstandFailureReason Reason, 
-        Either<ComplexTerm, string> CallDetails) 
-        : UnderstandingFailureReason;
 
     internal static class MetaVariable
     {
@@ -67,6 +49,9 @@ namespace Ginger.Runner
                 _ => term
             };
     }
+
+    internal sealed record MetaCallFirstParameterShouldBeMetaVariable(ComplexTerm CallDetails) 
+        : UnderstandingFailureReason;
 
     internal static class MetaCall
     {
@@ -103,6 +88,20 @@ namespace Ginger.Runner
                 _ => Left(new FailedUnderstandingAttempt(None, new MetaCallFirstParameterShouldBeMetaVariable(ct)))
             };
     }
+
+    internal enum MetaUnderstandFailureReason
+    { 
+        MetaUnderstandExpectsSingleArgument,
+        MetaUnderstandExpectsSingleArgumentOfTypeAtom,
+        UnderstandingProducedRulesInsteadOfComplexTerms,
+        IncompatibleNumberOfArgumentsAfterInlining,
+        UnderstandingOfTopmostElementProducedSeveralComplexTermsInsteadOfSingleOne
+    }
+
+    internal sealed record MetaUnderstandFailure(
+        MetaUnderstandFailureReason Reason, 
+        Either<ComplexTerm, string> CallDetails) 
+        : UnderstandingFailureReason;
 
     internal static class MetaUnderstand
     {
@@ -165,12 +164,14 @@ namespace Ginger.Runner
             Postprocess(complexTerm, understandSentence) switch
             {
                 (var adjustedComplexTerm, _, true) => Right(adjustedComplexTerm!),
-                (_, _, false) => Left(
+                (_, (var failedAttempts, _, true), false) => Left(failedAttempts!.First()),
+                (_, (_, var complexTermAdjuster, false), false) => Left(
                     new FailedUnderstandingAttempt(
                         None,
                         new MetaUnderstandFailure(
                             MetaUnderstandFailureReason.UnderstandingOfTopmostElementProducedSeveralComplexTermsInsteadOfSingleOne,
-                            Right($"Processing all {Name} calls in {Print(complexTerm)} produced several ComplexTerms instead of one. " + 
+                            Right($"Processing all {Name} calls in {Print(complexTerm)} produced several ComplexTerms instead of one: " +
+                                   Environment.NewLine + Print(complexTermAdjuster!(ComplexTerm(Functor("placeholder")))) + Environment.NewLine +
                                    "It is impossible to set several of them in a Rule's conclusion."))))
             };
 
@@ -184,43 +185,44 @@ namespace Ginger.Runner
             {
                 (var adjustedComplexTerm, _, true) => 
                     Right(CastToComplexTerms(adjustedComplexTerm!.Arguments)),
-                (_, var adjuster, false) => 
-                    adjuster!.Invoke(statementsHolder).Map2(
-                        understandingFailures => understandingFailures.First(),
-                        adjustedComplexTerm => CastToComplexTerms(adjustedComplexTerm.Arguments))
+                (_, (_, var adjuster, false), false) =>
+                    Right(CastToComplexTerms(adjuster!.Invoke(statementsHolder).Arguments)),
+                (_, (var failedAttempts, _, true), false) => 
+                    Left(failedAttempts!.First())
             };
         }
 
         private static Either<ComplexTerm, ComplexTermAdjuster> Postprocess(
-            ComplexTerm complexTerm, 
+            ComplexTerm complexTerm,
             Func<string, UnderstandingOutcome> understandSentence)
         {
             if (complexTerm.Functor.Name != Name)
             {
-                var (arguments, adjustors) = complexTerm.Arguments
+                var (arguments, adjusters) = complexTerm.Arguments
                         .Aggregate(
                             (
                                 Terms: new List<Term>(),
-                                Adjustors: new List<ComplexTermAdjuster>()
+                                Adjusters: new List<ComplexTermAdjuster>()
                             ),
                             (accumulator, term) => term switch
                             {
                                 ComplexTerm ct => 
                                     Postprocess(ct, understandSentence)
                                         .Fold(
-                                            ct1 => (accumulator.Terms.AddAndReturnSelf(ct1 as Term), accumulator.Adjustors),
-                                            parentAdjustor => (accumulator.Terms, accumulator.Adjustors.AddAndReturnSelf(parentAdjustor))),
+                                            ct1 => (accumulator.Terms.AddAndReturnSelf(ct1 as Term), accumulator.Adjusters),
+                                            parentAdjustor => (accumulator.Terms, accumulator.Adjusters.AddAndReturnSelf(parentAdjustor))),
                                 _ => 
-                                    (accumulator.Terms.AddAndReturnSelf(term), accumulator.Adjustors),
+                                    (accumulator.Terms.AddAndReturnSelf(term), accumulator.Adjusters),
                             });
 
-                return adjustors
+                return adjusters
                         .AggregateWhile(
-                            Right<IReadOnlyCollection<FailedUnderstandingAttempt>, ComplexTerm>(complexTerm with { Arguments = new (arguments) }),
+                            Right<IReadOnlyCollection<FailedUnderstandingAttempt>, ComplexTerm>(
+                                complexTerm with { Arguments = new (arguments) }),
                             (result, adustComplexTerm) => 
                                 from ct in result
-                                from adjustedCt in adustComplexTerm(ct)
-                                select adjustedCt,
+                                from ctAdjuster in adustComplexTerm
+                                select ctAdjuster(ct),
                             result => result.IsRight)
                         .Fold(Fail, Left<ComplexTerm, ComplexTermAdjuster>);
             }
@@ -236,7 +238,7 @@ namespace Ginger.Runner
             static Either<ComplexTerm, ComplexTermAdjuster> Fail(
                 IReadOnlyCollection<FailedUnderstandingAttempt> understandingFailures) 
             =>
-                Right<ComplexTerm, ComplexTermAdjuster>(_ => Left(understandingFailures));
+                Right<ComplexTerm, ComplexTermAdjuster>(Left(understandingFailures));
 
             static UnderstandingOutcome TryUnderstand(
                 ComplexTerm complexTerm, 
@@ -274,37 +276,27 @@ namespace Ginger.Runner
                         Left(statementsWithRecipe.Single().ComplexTerm),
                     (_, var statementsWithRecipe, false) => 
                         Right<ComplexTerm, ComplexTermAdjuster>(
-                            parent => 
-                                AdjustParent(
-                                    parent, 
-                                    statementsWithRecipe!.ConvertAll(swr => swr.ComplexTerm),
-                                    parsedSentence.Sentence))
+                            Right<IReadOnlyCollection<FailedUnderstandingAttempt>, Func<ComplexTerm, ComplexTerm>>(
+                                parent => 
+                                    AdjustParent(
+                                        parent, 
+                                        statementsWithRecipe!.ConvertAll(swr => swr.ComplexTerm))))
                 };
 
-            static Either<IReadOnlyCollection<FailedUnderstandingAttempt>, ComplexTerm> AdjustParent(
+            static ComplexTerm AdjustParent(
                 ComplexTerm parent,
-                IReadOnlyCollection<ComplexTerm> extraArguments,
-                string sentence)
+                IReadOnlyCollection<ComplexTerm> extraArguments)
             =>
                 parent.Functor switch 
                 {
                     var functor when functor == Builtin.DotFunctor =>
-                        Right(List(SkipFirstMetaUnderstander(parent.Arguments).SkipLast(1).Concat(extraArguments).Reverse())),
-                    var functor when PatternBuilder.BuiltinPrologFunctors.Contains(functor.Name) && 
-                                     functor.Arity != parent.Arguments.Count + extraArguments.Count - 1 =>
-                        Left(
-                            FailedAttempt(
-                                new MetaUnderstandFailure(
-                                    MetaUnderstandFailureReason.IncompatibleNumberOfArgumentsAfterInlining,
-                                    Right($"After inlining of the {Name}('{sentence}'), the number of arguments " + 
-                                    $"({parent.Arguments.Count + extraArguments.Count - 1}) became inconsistent " + 
-                                    $"with the built-in functor '{functor.Name}/{functor.Arity}'")))),
+                        List(SkipFirstMetaUnderstander(parent.Arguments).SkipLast(1).Concat(extraArguments).Reverse()),
                     var functor =>
-                        Right(parent with 
-                                { 
-                                    Functor = functor with { Arity = functor.Arity + extraArguments.Count - 1 },
-                                    Arguments = new (SkipFirstMetaUnderstander(parent.Arguments).Concat(extraArguments)),
-                                })
+                        parent with 
+                        { 
+                            Functor = functor with { Arity = functor.Arity + extraArguments.Count - 1 },
+                            Arguments = new (SkipFirstMetaUnderstander(parent.Arguments).Concat(extraArguments))
+                        }
                 };
 
             static IEnumerable<Term> SkipFirstMetaUnderstander(IEnumerable<Term> arguments)

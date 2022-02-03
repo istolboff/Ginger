@@ -11,9 +11,6 @@ using Ginger.Runner.Solarix;
 
 namespace Ginger.Tests.StepDefinitions
 {
-    using SentenceMeaning = Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>>;
-    using UnderstandingOutcome = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, UnderstoodSentence>;
-
     using static Either;
     using static MakeCompilerHappy;
     using static MonadicParsing;
