@@ -10,7 +10,6 @@ using Ginger.Runner.Solarix;
 namespace Ginger.Runner
 {
     using UnderstandingAttemptOutcome = Either<FailedUnderstandingAttempt, SuccessfulUnderstanding>;
-    using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuildingRecipe>, IReadOnlyCollection<ComplexTermBuildingRecipe>>;
     using FunctorBuildingRecipe = Either<FunctorBase /* BuiltIn Functor */, (NameBuildingRecipe FunctorNameBuildingRecipe, int Arity) /* Regular Functor building recipe */>;
 
     using static DomainApi;
@@ -21,11 +20,18 @@ namespace Ginger.Runner
     using static PatternBuilder;
     using static Prolog.Engine.Parsing.PrologParser;
 
+    internal abstract record UnderstandingFailureReason;
+
     internal sealed record FailedUnderstandingAttempt(MayBe<string> PatternId, UnderstandingFailureReason FailureReason);
 
     internal sealed record UnderstandingFailure(
-        ParsedSentence Sentence, 
-        IReadOnlyCollection<FailedUnderstandingAttempt> FailedAttempts);
+        Either<ParsedSentence, string> Sentence,
+        IReadOnlyCollection<FailedUnderstandingAttempt> FailedAttempts)
+        : UnderstandingFailureReason
+    {
+        public FailedUnderstandingAttempt AsFailedUnderstandingAttempt() =>
+            new (None, this);
+    }
 
     internal enum NumberMismatchReason
     {
@@ -33,7 +39,6 @@ namespace Ginger.Runner
         NumberOfSequencesOfExactWordsDiffer
     }
 
-    internal abstract record UnderstandingFailureReason;
     internal sealed record WrongNumberOfElements(int ExpectedNumber, int ActualNumber, NumberMismatchReason MismatchReason, string PatternText, string SentenceText) : UnderstandingFailureReason;
     internal sealed record SentenceShouldContainWordAtIndexes(IReadOnlyCollection<int> Indexes) : UnderstandingFailureReason;
     internal sealed record SentenceShouldContainSameWordAtTheseIndexes(IReadOnlyCollection<int> Indexes, WordOrQuotation<Word>[] Elements) : UnderstandingFailureReason;
@@ -379,7 +384,7 @@ namespace Ginger.Runner
             }
             
             var sequencesOfExactWords = sentenceElementsCheckers
-                    .Split(wordChecker => !wordChecker.HasValue, wordChecker => (wordChecker.Value!));
+                    .Split(wordChecker => !wordChecker.HasValue, wordChecker => wordChecker.Value!);
 
             return sequencesOfExactWords.Any()
                 ? Some(new ConcretePatternOfUnderstandingCapableOfDroppingQuotes(wrappedUnderstander, sequencesOfExactWords, grammarParser, russianLexicon))
@@ -392,8 +397,9 @@ namespace Ginger.Runner
         private bool EndsWithExactWords =>
             WrappedUnderstander.SentenceElementsCheckers.Last().HasValue;
 
-        private Either<FailedUnderstandingAttempt, List<Range>> CheckParsedSentence(ParsedSentence parsedSentence)
+        private Either<FailedUnderstandingAttempt, IReadOnlyCollection<Range>> CheckParsedSentence(ParsedSentence parsedSentence)
         {
+            LogCheckingT($"ConcretePatternOfUnderstandingCapableOfDroppingQuotes checks sentence '{parsedSentence.Sentence}'");
             var elements = parsedSentence.SentenceStructure.IterateByPosition().ToArray();
 
             var matchedSequences = new List<Range>();
@@ -403,6 +409,7 @@ namespace Ginger.Runner
                 var matchingSequenceRange = TryFindMatchingSequence(elements, sequenceOfExactWords, i);
                 if (matchingSequenceRange == null)
                 {
+                    LogChecking(false, $"Could not find matching sequence for '{sequenceOfExactWords}' starting from position {i}");
                     break;
                 }
 
@@ -421,7 +428,7 @@ namespace Ginger.Runner
                                                                 endsWithExactWords: EndsWithExactWords, 
                                                                 matchedSequences,
                                                                 elements)
-                   select matchedSequences;
+                   select matchedSequences.AsImmutable();
         }
 
         private Range? TryFindMatchingSequence(
@@ -453,7 +460,7 @@ namespace Ginger.Runner
                 grammarParser,
                 russianLexicon);
 
-            PatternEstablished?.Invoke(patternId, patternWithMeaning.Pattern, patternWithMeaning.Meaning);
+            PatternEstablished?.Invoke(patternId, patternWithMeaning.Pattern, patternWithMeaning.Meaning, regularUnderstander.MeaningBuildingRecipe);
             yield return regularUnderstander;
 
             var droppingQuotesUnderstander = ConcretePatternOfUnderstandingCapableOfDroppingQuotes.TryCreate(regularUnderstander, grammarParser, russianLexicon);
@@ -463,7 +470,7 @@ namespace Ginger.Runner
             }
         }
 
-        public static event Action<string, DisambiguatedSentence, SentenceMeaning>? PatternEstablished;
+        public static event Action<string, DisambiguatedSentence, SentenceMeaning, MeaningBuildingRecipe>? PatternEstablished;
 
         public static event Action<string, bool?>? PatternRecognitionEvent;
  

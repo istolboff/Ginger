@@ -20,6 +20,9 @@ namespace Ginger.Runner
     {
         public bool IsQuote => !Word.HasValue;
 
+        public string QuoteContentIfNeeded(char openingQuote = '\'', char closingQuote = '\'') =>
+            IsQuote ? $"{openingQuote}{Content}{closingQuote}" : Content;
+
         public IEnumerable<WordOrQuotation<TWord>> IterateDepthFirst() =>
             this.ToImmutable().Concat(Children.SelectMany(it => it.IterateDepthFirst()));
 
@@ -118,6 +121,7 @@ namespace Ginger.Runner
             ProgramLogic.Check(
                 unquotedWordsRanges.Any(), 
                 "Trying to introduce quotes when there is no unquoted ranges is meaningless.");
+
             var elements = SentenceStructure.IterateByPosition().AsImmutable();
             var sentenceStartsWithQuotation = !unquotedWordsRanges.First().Start.Equals(Index.Start);
             var sentenceEndsWithQuotation = !unquotedWordsRanges.Last().End.Equals(Index.FromStart(elements.Count));
@@ -132,7 +136,7 @@ namespace Ginger.Runner
                             sb.Append('\'');
                         }
 
-                        sb.Append(wordOrQuotation.Content);
+                        sb.Append(wordOrQuotation.QuoteContentIfNeeded('«', '»'));
                        
                         if (index == elements.Count - 1 && sentenceEndsWithQuotation ||
                             unquotedWordsRanges.Any(r => r.Start.Value == index + 1))
@@ -147,8 +151,21 @@ namespace Ginger.Runner
 
                         return (sb, index + 1);
                     })
-                .StringBuilder.ToString();
-            return grammarParser.ParsePreservingQuotes(adjustedSentenceText);
+                .StringBuilder
+                .ToString();
+
+            var parsedSentence = grammarParser.ParsePreservingQuotes(adjustedSentenceText);
+            return parsedSentence with 
+                    { 
+                        Sentence = RevertToNormalQuotes(parsedSentence.Sentence),
+                        SentenceStructure = parsedSentence.SentenceStructure
+                            .Transform(wordOrQuotation =>
+                                wordOrQuotation.IsQuote
+                                    ? wordOrQuotation with { Content = RevertToNormalQuotes(wordOrQuotation.Content) }
+                                    : wordOrQuotation) 
+                    };
+
+            static string RevertToNormalQuotes(string s) => s.Replace('«', '\'').Replace('»', '\'');
         }
 
         public MayBe<WordOrQuotation<Word>> TryLocateCompleteSubTreeOfSentenceElements(IReadOnlyCollection<int> wordPositions) =>
@@ -160,7 +177,7 @@ namespace Ginger.Runner
             new (
                 Join(
                     (_, it) => it.All(char.IsPunctuation) ? string.Empty : " ", 
-                    structure.IterateByPosition().Select(it => it.IsQuote ? $"'{it.Content}'" : it.Content)),
+                    structure.IterateByPosition().Select(it => it.QuoteContentIfNeeded())),
                 structure);
     }
 
@@ -177,7 +194,7 @@ namespace Ginger.Runner
             Annotations.LemmaVersionPicker
                 .Map(picker => LemmaVersions
                         .TrySingle(
-                            lv => picker.CheckLemmaVersion(lv.Characteristics),
+                            lv => picker.CheckLemmaVersion(lv.PartOfSpeech, lv.Characteristics),
                             matchingLemmaVersions => throw reportError(
                                 $"Disambiguator ({picker.Definition}) could not pick a single lemma version for '{Content}'. " + 
                                 "The following lemma versions all match: " + string.Join(";", matchingLemmaVersions) +
@@ -311,16 +328,20 @@ namespace Ginger.Runner
     }
 
     internal sealed record LemmaVersionPicker(
+        MayBe<PartOfSpeech> ExpectedPartOfSpeech,
         IReadOnlyCollection<CoordinateValue> ExpectedCoordinates,
         IReadOnlyDictionary<Type, IReadOnlyCollection<PropertyInfo>> RelevantGrammarCharacteristicsPropertyGetters)
     {
         public string Definition => string.Join(".,", ExpectedCoordinates.Select(c => c.ValueName)) + ".";
             
-        public bool CheckLemmaVersion(GrammarCharacteristics characteristics)
+        public bool CheckLemmaVersion(PartOfSpeech? partOfSpeech, GrammarCharacteristics characteristics)
         {
-            return RelevantGrammarCharacteristicsPropertyGetters.TryGetValue(characteristics.GetType(), out var properties) &&
-                    ExpectedCoordinates.Zip(properties)
-                        .All(it => StateIdsAreEqual(it.First.EnumValue, it.Second.GetValue(characteristics)));
+            return
+                ExpectedPartOfSpeech.Map(pos => partOfSpeech == pos).OrElse(true) &&
+                (characteristics.GetType() == typeof(NullGrammarCharacteristics) 
+                ||
+                RelevantGrammarCharacteristicsPropertyGetters.TryGetValue(characteristics.GetType(), out var properties) &&
+                ExpectedCoordinates.Zip(properties).All(it => StateIdsAreEqual(it.First.EnumValue, it.Second.GetValue(characteristics))));
 
             bool StateIdsAreEqual(int expected, object? actual) =>
                 actual != null && expected == (int)actual;
@@ -328,6 +349,7 @@ namespace Ginger.Runner
 
         public LemmaVersionPicker ForPluralForm() =>
             new (
+                ExpectedPartOfSpeech,
                 ExpectedCoordinates.Where(c => !c.CoordinateType.IsOneOf(typeof(Number), typeof(Gender))).AsImmutable(),
                 RelevantGrammarCharacteristicsPropertyGetters);
 
@@ -343,6 +365,12 @@ namespace Ginger.Runner
 
         public static LemmaVersionPicker Create(IReadOnlyCollection<CoordinateValue> expectedCoordinates)
         {
+            var expectedPartOfSpeech = expectedCoordinates.TrySingle(
+                        cv => cv.CoordinateType == typeof(PartOfSpeech),
+                        values => ProgramLogic.Error(
+                            "Expected coordinates can contain at most one expected PasrtOfSpeech, we've got several: " +
+                            string.Join(", ", values.Select(v => v.ValueName))))
+                        .Map(cv => (PartOfSpeech)cv.EnumValue);
             var propertyGettersMap = (
                         from it in Impl.GrammarCharacteristicsTypes
                         let properties = it.GetProperties()
@@ -354,7 +382,7 @@ namespace Ginger.Runner
                         )
                         .ToDictionary(it => it.GrammarCharacteristicsType, it => it.Properties);
 
-            return new (expectedCoordinates, propertyGettersMap);
+            return new (expectedPartOfSpeech, expectedCoordinates, propertyGettersMap);
         }
     }
     

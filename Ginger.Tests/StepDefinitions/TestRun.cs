@@ -37,6 +37,7 @@ namespace Ginger.Tests.StepDefinitions
         {
             _diContainer.RegisterInstanceAs(_russianGrammarParser);
             _diContainer.RegisterInstanceAs(_russianLexicon);
+            Prolog.Engine.Reset.Now();
         }
 
         private readonly IObjectContainer _diContainer;

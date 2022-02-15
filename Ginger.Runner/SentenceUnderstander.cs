@@ -127,8 +127,13 @@ namespace Ginger.Runner
                     state => state.UnderstandingResult.Map(v => v.UnderstandingConfidenceLevel).OrElse(int.MaxValue) != 0)
                 switch
                 {
-                    (var failedAttempts, (_, false)) => Left(failedAttempts as IReadOnlyCollection<FailedUnderstandingAttempt>),
-                    (_, (var result, true)) => Right(result!.UnderstoodSentence)
+                    (var failedAttempts, (_, false)) => 
+                        Left(
+                            new UnderstandingFailure(
+                                Left(sentence), 
+                                failedAttempts as IReadOnlyCollection<FailedUnderstandingAttempt>)),
+                    (_, (var result, true)) => 
+                        Right(result!.UnderstoodSentence)
                 };
 
         private static TextInput ReadEmbeddedResource(string name)

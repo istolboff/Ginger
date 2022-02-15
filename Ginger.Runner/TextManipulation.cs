@@ -53,12 +53,17 @@ namespace Ginger.Runner
                 string.Empty,
                 @this.Select((s, i) => useCamelCase && i == 0 ? s : textInfo.ToTitleCase(s)));
 
-        public static string Print<T>(T value, string? enumSeparator = null) =>
+        public static string Print<T>(T value, string? enumSeparator = null, int nestingLevel = default) =>
                 Prolog.Engine.PrettyPrinting.Print(
                     value, 
                     enumSeparator ?? Environment.NewLine,
+                    nestingLevel,
+                    Prolog.Engine.PrettyPrinting.CustomPrinter((UnderstandingFailure uf) =>
+                        $"Failed to understand phrase '{uf.Sentence.Fold(parsedSentence => parsedSentence.Sentence, sentenceText => sentenceText)}'" +
+                        Environment.NewLine +
+                        Print(uf.FailedAttempts, enumSeparator: Environment.NewLine, nestingLevel: nestingLevel + 1)),
                     Prolog.Engine.PrettyPrinting.CustomPrinter((FailedUnderstandingAttempt failedAttempt) => 
-                        $"   PatternId\t{failedAttempt.PatternId}: {TextManipulation.Print(failedAttempt.FailureReason)}"),
+                        $"PatternId\t{failedAttempt.PatternId}: {TextManipulation.Print(failedAttempt.FailureReason)}"),
                     Prolog.Engine.PrettyPrinting.CustomPrinter((WrongNumberOfElements r) =>
                         $"PatternText: {r.PatternText}; WrongNumberOfElements(Expected={r.ExpectedNumber}, Actual={r.ActualNumber}, Reason={r.MismatchReason})"),
                     Prolog.Engine.PrettyPrinting.CustomPrinter((MultipleUnderstandingFailureReasons r) =>
@@ -68,7 +73,17 @@ namespace Ginger.Runner
                     Prolog.Engine.PrettyPrinting.CustomPrinter((MetaUnderstandFailure r) =>
                         $"MetaUnderstandFailure({r.Reason}, " +
                         r.CallDetails.Fold(ct => TextManipulation.Print(ct), s => s) + 
-                        ")"));
+                        ")"),
+                    // Prolog.Engine.PrettyPrinting.CustomPrinter((RuleBuildingRecipe ruleBuildingRecipe) =>
+                    //     ?????),
+                    Prolog.Engine.PrettyPrinting.CustomPrinter((ComplexTermBuildingRecipe complexTermBuildingRecipe) =>
+                        complexTermBuildingRecipe.ConcreteBuilder.Fold(
+                            functor => $"Functor Name: {Print(functor.FunctorBuildingRecipe)}; Arguments: {Print(functor.ArgumentBuildingRecipies, ", ")}",
+                            quoteLocator => $"@understand({Print(quoteLocator)})")),
+                    Prolog.Engine.PrettyPrinting.CustomPrinter((MeaningBuildingRecipe meaningBuildingRecipe) =>
+                        meaningBuildingRecipe.Fold(
+                            rules => Print(rules, Environment.NewLine, nestingLevel: 1), 
+                            statements => Print(statements, Environment.NewLine, nestingLevel: 1))));
 
     }
 }

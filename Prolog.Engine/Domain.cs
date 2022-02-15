@@ -5,8 +5,6 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Prolog.Engine
 {
-    using UnificationResult = StructuralEquatableDictionary<Variable, Term>;
-
 #pragma warning disable SA1313 // ParameterNamesMustBeginWithLowerCaseLetter
     public abstract record Term
     {
@@ -22,6 +20,11 @@ namespace Prolog.Engine
     {
         public static Variable MakeNew(bool isTemporary = true) =>
             new (Name: $"_{++_nextNewVariableIndex}", IsTemporary: isTemporary);
+
+        internal static void ResetNewVariableIndex()
+        {
+            _nextNewVariableIndex = 0;
+        }
 
         private static int _nextNewVariableIndex;
     }
@@ -51,4 +54,12 @@ namespace Prolog.Engine
         public bool IsFact => !Premises.Any();
     }
 #pragma warning restore SA1313
+
+    public static class Reset
+    {
+        public static void Now()
+        {
+            Variable.ResetNewVariableIndex();
+        }
+    }
 }

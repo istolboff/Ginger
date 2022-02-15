@@ -6,8 +6,6 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Prolog.Engine
 {
-    using UnificationResult = StructuralEquatableDictionary<Variable, Term>;
-
     using static Builtin;
     using static DomainApi;
 

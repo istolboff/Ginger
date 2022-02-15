@@ -13,12 +13,16 @@ namespace Ginger.Runner.Solarix
     {
         public IEnumerable<string> ProposeDisambiguations(IRussianLexicon russianLexicon) 
         =>
-            from lemmaVersion in LemmaVersions
-            let partOfSpeech = IncludePartOfSpeech && lemmaVersion.PartOfSpeech != null 
-                                    ? russianLexicon.GetPartOfSpeechName(lemmaVersion.PartOfSpeech.Value) 
-                                    : default(string)
-            let relevantCoordinates = GetRelevantCoordinates(lemmaVersion.Characteristics, russianLexicon)
-            select "(" + string.Join(',', new[] { partOfSpeech }.Concat(relevantCoordinates).Where(s => !string.IsNullOrEmpty(s))) + ")";
+            Coordinates.Any()
+                ? from lemmaVersion in LemmaVersions
+                  let partOfSpeech = IncludePartOfSpeech && lemmaVersion.PartOfSpeech != null 
+                                        ? russianLexicon.GetPartOfSpeechName(lemmaVersion.PartOfSpeech.Value) 
+                                        : default(string)
+                  let relevantCoordinates = GetRelevantCoordinates(lemmaVersion.Characteristics, russianLexicon)
+                  select "(" + string.Join(',', new[] { partOfSpeech }.Concat(relevantCoordinates).Where(s => !string.IsNullOrEmpty(s))) + ")"
+                : LemmaVersions
+                    .Where(lemmaVersion => lemmaVersion.PartOfSpeech != null)
+                    .Select(lemmaVersion => "(" + russianLexicon.GetPartOfSpeechName(lemmaVersion.PartOfSpeech!.Value) + ")") ;
 
         public static LemmaVersionDisambiguator Create(
             IReadOnlyCollection<LemmaVersion> lemmaVersions)
@@ -63,7 +67,7 @@ namespace Ginger.Runner.Solarix
 
             return new(
                 LemmaVersions: lemmaVersions,
-                IncludePartOfSpeech: groupedByCharacteristicTypes.Count > 1, 
+                IncludePartOfSpeech: groupedByCharacteristicTypes.Count > 1 || !coordinates.Any(), 
                 Coordinates: coordinates.ToDictionary(it => it.CharacteristicsType, it => it.DisambiguatingProperties));
         }
 

@@ -10,7 +10,6 @@ namespace Ginger.Runner
 {
     using MeaningWithRecipe = Either<IReadOnlyCollection<RuleWithRecipe>, IReadOnlyCollection<ComplexTermWithRecipe>>;
     using FunctorBuildingRecipe = Either<FunctorBase /* BuiltIn Functor */, (NameBuildingRecipe FunctorNameBuildingRecipe, int Arity) /* Regular Functor building recipe */>;
-    using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuildingRecipe>, IReadOnlyCollection<ComplexTermBuildingRecipe>>;
 
     using static DomainApi;
     using static Either;
@@ -204,7 +203,6 @@ namespace Ginger.Runner
             recipe.NameComponentGetters.Count switch
             {
                 0 => Left(new FailedUnderstandingAttempt(None, new EmptyNameBuilder())),
-                1 => Right(recipe.NameComponentGetters.Single().ComponentGetter(sentence)),
                 _ => Right(string.Join(
                         string.Empty, 
                         recipe.NameComponentGetters.Select((wl, i) => 

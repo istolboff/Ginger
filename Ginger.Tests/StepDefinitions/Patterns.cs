@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using TechTalk.SpecFlow;
@@ -15,7 +14,7 @@ namespace Ginger.Tests.StepDefinitions
     using static MakeCompilerHappy;
     using static MonadicParsing;
     using static TextParsingPrimitives;
-    using static PrettyPrinting;
+    using static TextManipulation;
     using static PrologParser;
 
     [Binding]
@@ -91,14 +90,12 @@ namespace Ginger.Tests.StepDefinitions
 
             static string PrintUnderstoodSentence(UnderstandingOutcome understoodSentence) =>
                 understoodSentence.Fold(
-                    failures => $"Understanding failed:{Environment.NewLine}" + 
-                                Print(SelectAndOrderFailures(failures), Environment.NewLine),
+                    understandingFailure => $"Understanding failed:{Environment.NewLine}" + 
+                                Print(
+                                    understandingFailure.FailedAttempts
+                                        .Where(failure => failure.FailureReason is not WrongNumberOfElements),
+                                    Environment.NewLine),
                     r => Print(GetMeaning(r)));
-
-            static IEnumerable<string> SelectAndOrderFailures(IEnumerable<FailedUnderstandingAttempt> failedAttempts) =>
-                from failure in failedAttempts
-                where failure.FailureReason is not WrongNumberOfElements
-                select failure.ToString();
         }
 
         [Then("the following sentences should fail to be understood")]

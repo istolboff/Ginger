@@ -8,8 +8,6 @@ using Ginger.Runner.Solarix;
 
 namespace Ginger.Runner
 {
-    using MeaningBuildingRecipe = Either<IReadOnlyCollection<RuleBuildingRecipe>, IReadOnlyCollection<ComplexTermBuildingRecipe>>;
-
     using static DomainApi;
     using static MayBe;
     using static TextManipulation;

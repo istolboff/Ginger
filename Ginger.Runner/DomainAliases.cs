@@ -5,5 +5,10 @@ global using SentenceMeaning =
 
 global using UnderstandingOutcome =
     Prolog.Engine.Miscellaneous.Either<
-        System.Collections.Generic.IReadOnlyCollection<Ginger.Runner.FailedUnderstandingAttempt>,
+        Ginger.Runner.UnderstandingFailure,
         Ginger.Runner.UnderstoodSentence>;
+
+global using MeaningBuildingRecipe = 
+    Prolog.Engine.Miscellaneous.Either<
+        System.Collections.Generic.IReadOnlyCollection<Ginger.Runner.RuleBuildingRecipe>, 
+        System.Collections.Generic.IReadOnlyCollection<Ginger.Runner.ComplexTermBuildingRecipe>>;

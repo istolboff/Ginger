@@ -8,7 +8,6 @@ using Prolog.Engine.Parsing;
 
 namespace Prolog.Tests
 {
-    using UnificationResult = StructuralEquatableDictionary<Variable, Term>;
     using V = Dictionary<Variable, Term>;
 
     using static DomainApi;

@@ -7,8 +7,6 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Prolog.Engine
 {
-    using UnificationResult = StructuralEquatableDictionary<Variable, Term>;
-
     using static DomainApi;
 
     internal static class PrettyPrinting
@@ -16,7 +14,10 @@ namespace Prolog.Engine
         public static string Print<T>(
             T @this, 
             string enumSeparator = "; ",
-            params syntacticshugar_CustomPrinter[] customPrinters) =>
+            int nestingLevel = default,
+            params syntacticshugar_CustomPrinter[] customPrinters) 
+        =>
+            new string(' ', nestingLevel * 3) +
             @this switch
             {
                 Atom atom => atom.Characters,
@@ -34,7 +35,7 @@ namespace Prolog.Engine
                 ValueTuple<Term, Term> unification => $"({Print(unification.Item1)}, {Print(unification.Item2)})",
                 Either<IReadOnlyCollection<Rule>, IReadOnlyCollection<ComplexTerm>> sentenceMeaning => sentenceMeaning.Fold(rules => Print(rules), statements => Print(statements)),
                 string text => text,
-                IEnumerable collection => string.Join(enumSeparator, collection.Cast<object>().Select(it => Print(it, enumSeparator, customPrinters))),
+                IEnumerable collection => string.Join(enumSeparator, collection.Cast<object>().Select(it => Print(it, enumSeparator, nestingLevel, customPrinters))),
                 _ when customPrinters.TryFirst(cp => cp.ArgumentType.IsAssignableFrom(@this?.GetType() ?? typeof(Unit))) is var customPrinter && customPrinter.HasValue =>
                     Print(customPrinter.Value.Delegate.DynamicInvoke(@this)),
                 _ => @this?.ToString() ?? "NULL"

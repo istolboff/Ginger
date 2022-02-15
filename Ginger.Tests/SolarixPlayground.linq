@@ -1,5 +1,5 @@
 <Query Kind="Program">
-  <Reference Relative="..\bin\Debug\net5.0\gren_fx.dll">&lt;MyDocuments&gt;\devl\Ginger\bin\Debug\net5.0\gren_fx.dll</Reference>
+  <Reference Relative="..\bin\Debug\net6.0\gren_fx.dll">C:\Igor\Experiments\Ginger\bin\Debug\net6.0\gren_fx.dll</Reference>
   <Namespace>SolarixGrammarEngineNET</Namespace>
 </Query>
 
@@ -20,7 +20,7 @@ void Main()
         throw new InvalidOperationException($"Could not load Dictionary from {DefaultSolarixDictionaryXmlPath}. {DescribeError()}");
     }
 
-	Parse("Если коза и капуста находятся на одном береге реки, то все плохо.");
+	Parse("Если волк и коза находятся на одном береге реки, а фермер находится на другом береге реки, то миссия заканчивается неудачей с формулировкой 'волк съел козу'");
 //	DescribeProjections("одному", "Case", "Number", "Gender", "Form").Dump();
 
 	_engineHandle.Dispose();
@@ -218,7 +218,7 @@ static void SuppressCa1806<T>(T unused)
 
 private static DisposableIntPtr _engineHandle;
 
-private const string DefaultSolarixDictionaryXmlPath = @"C:\Users\istolbov\Documents\devl\Ginger\bin\Debug\net5.0\dictionary.xml";
+private const string DefaultSolarixDictionaryXmlPath = @"C:\Igor\Experiments\Ginger\bin\Debug\net6.0\dictionary.xml";
 
 internal sealed class DisposableIntPtr : IDisposable 
 {

@@ -16,4 +16,8 @@
       <_Parameter1>Ginger.Tests</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Prolog.Engine\DomainAliases.cs" />
+  </ItemGroup>
 </Project>

@@ -7,7 +7,7 @@ using Prolog.Engine.Miscellaneous;
 
 namespace Ginger.Runner
 {
-    using ComplexTermAdjuster = Either<IReadOnlyCollection<FailedUnderstandingAttempt>, Func<ComplexTerm, ComplexTerm>>;
+    using ComplexTermAdjuster = Either<UnderstandingFailure, Func<ComplexTerm, ComplexTerm>>;
     
     using static DomainApi;
     using static Either;
@@ -95,12 +95,13 @@ namespace Ginger.Runner
         MetaUnderstandExpectsSingleArgumentOfTypeAtom,
         UnderstandingProducedRulesInsteadOfComplexTerms,
         IncompatibleNumberOfArgumentsAfterInlining,
-        UnderstandingOfTopmostElementProducedSeveralComplexTermsInsteadOfSingleOne
+        UnderstandingOfTopmostElementProducedSeveralComplexTermsInsteadOfSingleOne,
+        MetaUnderstandDidNotFindMatchingPattern
     }
 
     internal sealed record MetaUnderstandFailure(
         MetaUnderstandFailureReason Reason, 
-        Either<ComplexTerm, string> CallDetails) 
+        Either<ComplexTerm, string> CallDetails)
         : UnderstandingFailureReason;
 
     internal static class MetaUnderstand
@@ -123,7 +124,7 @@ namespace Ginger.Runner
                     select adjustedMeaning
             };
 
-        public static InvalidOperationException MetaModifierError(string message) =>  new (message);
+        public static InvalidOperationException MetaModifierError(string message) => new (message);
 
         private static Either<FailedUnderstandingAttempt, RuleWithRecipe> Postprocess(
             RuleWithRecipe ruleWithRecipe,
@@ -164,15 +165,15 @@ namespace Ginger.Runner
             Postprocess(complexTerm, understandSentence) switch
             {
                 (var adjustedComplexTerm, _, true) => Right(adjustedComplexTerm!),
-                (_, (var failedAttempts, _, true), false) => Left(failedAttempts!.First()),
+                (_, (var understandingFailure, _, true), false) => Left(understandingFailure!.AsFailedUnderstandingAttempt()),
                 (_, (_, var complexTermAdjuster, false), false) => Left(
                     new FailedUnderstandingAttempt(
                         None,
                         new MetaUnderstandFailure(
                             MetaUnderstandFailureReason.UnderstandingOfTopmostElementProducedSeveralComplexTermsInsteadOfSingleOne,
                             Right($"Processing all {Name} calls in {Print(complexTerm)} produced several ComplexTerms instead of one: " +
-                                   Environment.NewLine + Print(complexTermAdjuster!(ComplexTerm(Functor("placeholder")))) + Environment.NewLine +
-                                   "It is impossible to set several of them in a Rule's conclusion."))))
+                                   Environment.NewLine + '\t' + Print(complexTermAdjuster!(ComplexTerm(Functor("placeholder"))).Arguments)
+                                   + Environment.NewLine + "It is impossible to set several of them in a Rule's conclusion."))))
             };
 
         private static Either<FailedUnderstandingAttempt, IReadOnlyCollection<ComplexTerm>> PostprocessTopmost(
@@ -187,8 +188,8 @@ namespace Ginger.Runner
                     Right(CastToComplexTerms(adjustedComplexTerm!.Arguments)),
                 (_, (_, var adjuster, false), false) =>
                     Right(CastToComplexTerms(adjuster!.Invoke(statementsHolder).Arguments)),
-                (_, (var failedAttempts, _, true), false) => 
-                    Left(failedAttempts!.First())
+                (_, (var understandingFailure, _, true), false) => 
+                    Left(understandingFailure!.AsFailedUnderstandingAttempt())
             };
         }
 
@@ -217,7 +218,7 @@ namespace Ginger.Runner
 
                 return adjusters
                         .AggregateWhile(
-                            Right<IReadOnlyCollection<FailedUnderstandingAttempt>, ComplexTerm>(
+                            Right<UnderstandingFailure, ComplexTerm>(
                                 complexTerm with { Arguments = new (arguments) }),
                             (result, adustComplexTerm) => 
                                 from ct in result
@@ -229,16 +230,16 @@ namespace Ginger.Runner
 
             return TryUnderstand(complexTerm, understandSentence) switch
                 {
-                    (var understandingFailures, _, true) => 
-                        Fail(understandingFailures!),
+                    (var understandingFailure, _, true) => 
+                        Fail(understandingFailure!),
                     (_, var (parsedSentence, _, meaningWithRecipe), false) =>
                         TryUnwrapMeaning(meaningWithRecipe, parsedSentence)
                 };
 
             static Either<ComplexTerm, ComplexTermAdjuster> Fail(
-                IReadOnlyCollection<FailedUnderstandingAttempt> understandingFailures) 
+                UnderstandingFailure understandingFailure) 
             =>
-                Right<ComplexTerm, ComplexTermAdjuster>(Left(understandingFailures));
+                Right<ComplexTerm, ComplexTermAdjuster>(Left(understandingFailure));
 
             static UnderstandingOutcome TryUnderstand(
                 ComplexTerm complexTerm, 
@@ -251,12 +252,13 @@ namespace Ginger.Runner
                     var firstArgument when (complexTerm.Arguments.Count != 1) || (firstArgument is not Prolog.Engine.Atom) =>
                         Left(
                             FailedAttempt(
+                                Right(Print(complexTerm)),
                                 new MetaUnderstandFailure(
                                     complexTerm.Arguments.Count != 1 
                                         ? MetaUnderstandFailureReason.MetaUnderstandExpectsSingleArgument
                                         : MetaUnderstandFailureReason.MetaUnderstandExpectsSingleArgumentOfTypeAtom,
                                     Left(complexTerm)))),
-                    Atom atom => understandSentence(atom.Characters),
+                    Atom atom => understandSentence(PatternBuilder.LogCheckingT(new { Action = "MetaUnderstandingAttempt", Sentence = atom.Characters }).Sentence),
                     _ => throw ProgramLogic.ThisSwitchPathSeemsToBeUnreachable
                 };
 
@@ -269,6 +271,7 @@ namespace Ginger.Runner
                     (var rulesWithRecipe, _, true) => 
                         Fail(
                             FailedAttempt(
+                                Left(parsedSentence),
                                 new MetaUnderstandFailure(
                                     MetaUnderstandFailureReason.UnderstandingProducedRulesInsteadOfComplexTerms,
                                     Right($"'{parsedSentence.Sentence}' => {Print(rulesWithRecipe)}")))),
@@ -276,7 +279,7 @@ namespace Ginger.Runner
                         Left(statementsWithRecipe.Single().ComplexTerm),
                     (_, var statementsWithRecipe, false) => 
                         Right<ComplexTerm, ComplexTermAdjuster>(
-                            Right<IReadOnlyCollection<FailedUnderstandingAttempt>, Func<ComplexTerm, ComplexTerm>>(
+                            Right<UnderstandingFailure, Func<ComplexTerm, ComplexTerm>>(
                                 parent => 
                                     AdjustParent(
                                         parent, 
@@ -317,7 +320,10 @@ namespace Ginger.Runner
             }
         }
 
-        private static IReadOnlyCollection<FailedUnderstandingAttempt> FailedAttempt(MetaUnderstandFailure failure) =>
-            new FailedUnderstandingAttempt(None, failure).ToImmutable();
+        private static UnderstandingFailure FailedAttempt(
+            Either<ParsedSentence, string> sentence, 
+            MetaUnderstandFailure failure) 
+        =>
+            new (sentence, new FailedUnderstandingAttempt(None, failure).ToImmutable());
     }
 }

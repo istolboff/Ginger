@@ -183,9 +183,9 @@ namespace Ginger.Runner
                     CreateMeaningBuilder());
             
             return understandingOutcome.Fold(
-                failedAttempts => throw UnderstandingFailed(
-                                    phrasing, 
-                                    understandingOutcome.Left!.Concat(failedAttempts)),
+                understandingFailure => throw UnderstandingFailed(
+                                                phrasing, 
+                                                understandingFailure.FailedAttempts),
                 understoodSentence => understoodSentence);
         }
 
@@ -203,15 +203,11 @@ namespace Ginger.Runner
                 return understandingOutcome;
             }
 
-            var woundSentenceUnderstanding = 
-                    _sentenceUnderstander.Understand(
+            return _sentenceUnderstander.Understand(
                         woundSentence.Value!.Sentence,
                         OverrideMeaningBuilder(
                             CreateMeaningBuilder(), 
                             woundSentence.Value!.WoundEntities));
-
-            return woundSentenceUnderstanding.MapLeft(
-                failedAttempts => understandingOutcome.Left!.Concat(failedAttempts).AsImmutable());
         }
 
         private static InvalidOperationException UnderstandingFailed(

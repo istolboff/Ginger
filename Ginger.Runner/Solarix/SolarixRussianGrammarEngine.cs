@@ -15,12 +15,15 @@ namespace Ginger.Runner.Solarix
 
     internal sealed class SolarixRussianGrammarEngine : IRussianGrammarParser, IRussianLexicon
     {
-        public SolarixRussianGrammarEngine()
+        public SolarixRussianGrammarEngine(
+            Func<IReadOnlyCollection<SentenceElement>, IReadOnlyCollection<SentenceElement>>? postProcessor = null)
         {
             _engineHandle = new DisposableIntPtr(
                 GrammarEngine.sol_CreateGrammarEngineW(null), 
                 handle => SuppressCa1806(GrammarEngine.sol_DeleteGrammarEngine(handle)),
                 "GrammarEngine");
+
+            _postProcessor = postProcessor ?? SolarixParserPatches.PostProcess;
 
             var loadStatus = GrammarEngine.sol_LoadDictionaryExW(
                     _engineHandle,
@@ -109,12 +112,15 @@ namespace Ginger.Runner.Solarix
                 };
 
                 _knownCoordStateNames = (
-                    from it in CoordinateStateTypeToCoordinateIdMap
-                    from attributeId in Enum.GetValues(it.Key).Cast<int>()
-                    let coordStateName = GetCoordStateName(it.Value, attributeId)
-                    where !string.IsNullOrEmpty(coordStateName)
-                    select (coordStateName, CoordType: it.Key, StateId: attributeId)
-                ).ToDictionary(it => it.coordStateName, it => (it.CoordType, it.StateId), RussianIgnoreCase);
+                        from it in CoordinateStateTypeToCoordinateIdMap
+                        from attributeId in Enum.GetValues(it.Key).Cast<int>()
+                        let coordStateName = GetCoordStateName(it.Value, attributeId)
+                        where !string.IsNullOrEmpty(coordStateName)
+                        select (CoordStateName: coordStateName, CoordType: it.Key, StateId: attributeId))
+                    .Concat(
+                        from partOfSpeech in Enum.GetNames(typeof(PartOfSpeech))
+                        select (CoordStateName: partOfSpeech, CoordType: typeof(PartOfSpeech), StateId: (int)Enum.Parse(typeof(PartOfSpeech), partOfSpeech)))
+                    .ToDictionary(it => it.CoordStateName, it => (it.CoordType, it.StateId), RussianIgnoreCase);
 
                 string GetCoordStateName(int categoryId, int attrId)
                 {
@@ -148,9 +154,10 @@ namespace Ginger.Runner.Solarix
                     throw new InvalidOperationException($"No graphs were parsed from the text: {text}.");
                 }
 
-                return Enumerable.Range(1, GrammarEngine.sol_CountRoots(hPack, 0) - 2)
-                    .Select(i => CreateSentenceElement(GrammarEngine.sol_GetRoot(hPack, 0, i)))
-                    .AsImmutable();
+                return _postProcessor(
+                            Enumerable.Range(1, GrammarEngine.sol_CountRoots(hPack, 0) - 2)
+                                .Select(i => CreateSentenceElement(GrammarEngine.sol_GetRoot(hPack, 0, i)))
+                                .AsImmutable());
             }
             finally
             {
@@ -498,6 +505,7 @@ namespace Ginger.Runner.Solarix
                 .ToArray();
 
         private readonly DisposableIntPtr _engineHandle;
+        private readonly Func<IReadOnlyCollection<SentenceElement>, IReadOnlyCollection<SentenceElement>> _postProcessor;
         private readonly IDictionary<PartOfSpeech, Func<IntPtr, int, GrammarCharacteristics>> _grammarCharacteristicsBuilders;
         private readonly IReadOnlyDictionary<string, (Type CoordinateType, int StateId)> _knownCoordStateNames;
     }
